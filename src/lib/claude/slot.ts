@@ -120,9 +120,15 @@ export const APPLY_FALLBACK_BUTTON = "Show me how";
 
 const shortTitle = (t: string) => (t.length > 90 ? `${t.slice(0, 89)}…` : t);
 
-/** Template headline used when the model's headline drifted to another concept. */
+/**
+ * Template headline used when the model's headline drifted to another concept.
+ * The title leads so its capitalization stays right ("Probability calibration:
+ * …" rather than "why Probability calibration matters").
+ */
 export function fallbackHeadline(variant: "walkthrough" | "apply", title: string): string {
-  return variant === "walkthrough" ? `Want to see why ${shortTitle(title)} matters here?` : `See how ${shortTitle(title)} applies to your project`;
+  return variant === "walkthrough"
+    ? `${shortTitle(title)}: want to see why it matters here?`
+    : `${shortTitle(title)}: see how it applies to your project`;
 }
 
 /** Model output → SlotContent (throws if unusable). Exported for tests. */

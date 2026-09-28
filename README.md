@@ -17,7 +17,7 @@ After the passcode, use the persona switcher to move between three seeded learne
 | Persona | Who | What it shows |
 |---|---|---|
 | **Maya** | MPH epidemiology, readmissions thesis. Tier 2. | The full learner profile: ~12 concepts with mastery and the evidence behind each score, an inferred learning style you can edit, suggested next topics, 5 Learn It Later items, past conversations in the sidebar. |
-| **Dev** | MS data science, churn capstone. 4 of 5 framing exchanges done. | **The unlock.** Switch to Dev, ask a concept question (e.g. *"Why does regularization reduce overfitting?"*), and answer the framing card. That fifth exchange triggers the Tier 1 reveal ("here's how I think you learn"). |
+| **Dev** | MS data science, churn capstone. 4 of 5 framing exchanges done, 3 concepts tracked. | **The unlock.** Switch to Dev, ask a concept question (e.g. *"Why does regularization reduce overfitting?"*), and answer the framing card. That fifth exchange triggers the Tier 1 reveal ("here's how I think you learn"). |
 | **Sam** | Brand new. | The empty state with starter prompts that cover all three router paths, and the Tier 0 progress meter. |
 
 Things to look for:

@@ -176,7 +176,7 @@ function ChatView({
         <div className={COLUMN}>
           {composer}
           <p className="mt-2 text-center text-[0.7rem] text-ink-muted">
-            Claude can make mistakes. Check important results — especially before they go in your thesis.
+            Claude can make mistakes. Check important results before they go into your work.
           </p>
         </div>
       </div>

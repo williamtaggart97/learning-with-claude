@@ -1,6 +1,9 @@
 // Dev — MS data science, customer-churn capstone (X4 "almost unlocked").
 // Exactly 4 answered framing exchanges (Tier 1 needs 5, so the next answered
-// exchange triggers the unlock live — X7) and 5 concepts (< 8).
+// exchange triggers the unlock live — X7) and only 3 concepts, so the extra
+// concepts one more framing round adds stay well short of Tier 2's 8. Exchanges
+// may name concepts that have no mastery row (precision-recall,
+// cross-validation, probability-calibration); the Learn It Later queue does too.
 // Lightly inferred learning style (low confidence). Works in Python.
 import { md, type SeedPersona } from "./types";
 
@@ -51,13 +54,6 @@ export const dev: SeedPersona = {
       ],
     },
     {
-      slug: "precision-recall",
-      evidence: [
-        { ref: "d1.x1", delta: 0.25, note: "Hadn't used PR-AUC or precision@k before; followed why the PR baseline is the churn rate (0.08)." },
-        { ref: "d1.x2", delta: 0.1, note: "Connected the 400-call monthly capacity to precision among the top-ranked customers." },
-      ],
-    },
-    {
       slug: "decision-thresholds",
       evidence: [
         { ref: "d1.x1", delta: 0.1, note: "Hadn't considered that the default 0.5 cutoff is a choice rather than part of the model." },
@@ -69,13 +65,6 @@ export const dev: SeedPersona = {
       evidence: [
         { ref: "d2.x1", delta: 0.1, note: "Marked cancellation_reason as available at scoring time — didn't spot target leakage." },
         { ref: "d2.x2", delta: 0.2, note: "Correctly limited features to data available through the day before scoring." },
-      ],
-    },
-    {
-      slug: "cross-validation",
-      evidence: [
-        { ref: "d2.x1", delta: 0.1, note: "Used a random row split on customer-month panel data, so customers appeared in both train and validation." },
-        { ref: "d2.x2", delta: 0.3, note: "Followed the rolling-origin setup, including why the scored month's own rows can never be in training." },
       ],
     },
   ],

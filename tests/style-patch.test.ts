@@ -1,5 +1,5 @@
 // Offline checks for PATCH /api/profile learning-style edits and
-// "Reset to Claude's estimate" (resetLearningStyle). No network, no database.
+// "Let Claude infer this again" (resetLearningStyle). No network, no database.
 //
 // Run: node --conditions=react-server --import tsx --test tests/*.test.ts
 import assert from "node:assert/strict";

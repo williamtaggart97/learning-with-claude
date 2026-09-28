@@ -2,7 +2,7 @@
 // "How you learn" (P2, P3): the three style dimensions as labelled spectrums
 // with a confidence band. Read-only at Tier 1; adjustable at Tier 2 (PATCH
 // /api/profile marks a dimension overridden — "You set this"). An overridden
-// dimension's editor offers "Reset to Claude's estimate" (resetLearningStyle),
+// dimension's editor offers "Let Claude infer this again" (resetLearningStyle),
 // which hands it back to the assessor.
 import { useId, useState } from "react";
 import { usePatchProfile } from "@/lib/client/profile-patch";
@@ -359,7 +359,7 @@ function EntryPointEditor({
 }
 
 /**
- * "Reset to Claude’s estimate" for a dimension the user set: clears the
+ * "Let Claude infer this again" for a dimension the user set: clears the
  * override (PATCH resetLearningStyle) so Claude goes back to inferring it.
  * Claude's earlier estimate isn't stored, so it restarts from a hedged
  * "still figuring this out" read (see src/lib/style-patch.ts).
@@ -400,7 +400,7 @@ function ResetToEstimate({
         title="Claude will go back to inferring this from how you learn"
         className={smallButton}
       >
-        Reset to Claude’s estimate
+        Let Claude infer this again
       </button>
     </>
   );

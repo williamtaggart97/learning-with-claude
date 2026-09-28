@@ -5,7 +5,7 @@
 // for entryPoint = null, i.e. "no preference"), `*Overridden = true`. The
 // assessor never touches overridden dimensions.
 //
-// Resetting a dimension ("Reset to Claude's estimate", resetLearningStyle):
+// Resetting a dimension ("Let Claude infer this again", resetLearningStyle):
 // the override is cleared so the assessor infers it again. Claude's earlier
 // estimate is NOT restored: the assessor stops updating a dimension once it
 // is overridden and the edit overwrote the inferred value, so there is no

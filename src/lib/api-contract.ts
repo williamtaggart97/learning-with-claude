@@ -319,7 +319,7 @@
  * PATCH /api/profile                   body ProfilePatch → ProfileDTO
  *   Tier 2 only (403 tier_locked otherwise). Edited style dimensions get
  *   `*Overridden = true`; context edits set `userEdited = true`.
- *   Reset to Claude's estimate: `{ resetLearningStyle: ["briefVsThorough"] }`
+ *   Let Claude infer this again: `{ resetLearningStyle: ["briefVsThorough"] }`
  *   (any of intuitionVsFormal | entryPoint | briefVsThorough) clears the
  *   override so the assessor infers the dimension again. The value stays as
  *   a weak prior with confidence 0.15 ("still figuring this out") — the

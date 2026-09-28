@@ -187,7 +187,7 @@ test("normalizeSlotContent: a headline about another concept falls back to a tem
     item,
   );
   assert.equal(drift.variant === "walkthrough" && drift.copy.headline, fallbackHeadline("walkthrough", "Target leakage"));
-  assert.equal(drift.variant === "walkthrough" && drift.copy.headline, "Want to see why Target leakage matters here?");
+  assert.equal(drift.variant === "walkthrough" && drift.copy.headline, "Target leakage: want to see why it matters here?");
   const onTopic = normalizeSlotContent("walkthrough", { headline: "Want to see how leakage inflates AUC?", subline: "s" }, seededRng(1), item);
   assert.equal(onTopic.variant === "walkthrough" && onTopic.copy.headline, "Want to see how leakage inflates AUC?");
   // Without the item (old callers) nothing is rewritten.
