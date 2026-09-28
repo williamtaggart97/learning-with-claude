@@ -104,11 +104,10 @@ export const DEFAULT_PERSONA = "maya" as const;
 
 /**
  * End-of-answer slot experiment (E1–E5). See src/lib/slot/policy.ts.
- * - active: master switch (env EXPERIMENT_ACTIVE). While false (the default
- *   until the slot UI ships) nothing is drawn or logged and no `slot` event is
- *   sent: the featured item is saved and emitted via `callouts` exactly as
- *   before, so no contaminated impressions are recorded before the UI can
- *   render the slot. The UI phase flips the default to true.
+ * - active: master switch (env EXPERIMENT_ACTIVE; default on — set
+ *   EXPERIMENT_ACTIVE=0 to turn it off). While false nothing is drawn or
+ *   logged and no `slot` event is sent: the featured item is saved and
+ *   emitted via `callouts` exactly as before (the UI shows callout chips).
  * - topPickProbability: E2 — chance the router's rank-1 hidden decision is the
  *   featured one; otherwise one of the lower-ranked candidates, uniformly.
  * - weights: E1 — relative draw weights among the ELIGIBLE variants (equal to
@@ -123,7 +122,7 @@ export const DEFAULT_PERSONA = "maya" as const;
  *   up to this much later than card / none (see R15).
  */
 export const EXPERIMENT = {
-  active: envBool("EXPERIMENT_ACTIVE", false),
+  active: envBool("EXPERIMENT_ACTIVE", true),
   topPickProbability: 0.6,
   weights: { card: 1, walkthrough: 1, quickcheck: 1, apply: 1, none: 1 },
   enabled: { card: true, walkthrough: true, quickcheck: true, apply: true, none: true },

@@ -142,6 +142,11 @@ export interface SlotResults {
   conditional: ConditionalComparison[];
   /** E2: engagement by the featured item's router rank (non-control draws only). */
   byRank: RankRow[];
+  /**
+   * R13: a new item vs an already-queued item shown again (non-control draws
+   * only); "Not recorded" = impressions logged before reusedItem existed.
+   */
+  byItemSource: RankRow[];
   /** E2 sanity check: share of rank-1 picks among impressions where the draw had a choice. */
   rankDraw: { randomizable: number; rank1: number; share: number | null };
   engagementKinds: Record<string, number>;
@@ -159,6 +164,8 @@ export interface ImpressionFacts {
   featuredRank: number | null;
   featuredIsWhy: boolean;
   candidateCount: number;
+  /** R13: an already-queued item was shown instead of a new one; null = not recorded (older rows). */
+  reusedItem: boolean | null;
   engagement: string | null;
   engagedAt: Date | null;
   walkthroughStarted: boolean;
@@ -277,7 +284,7 @@ export function aggregate(
     { label: "Rank 2", match: (r) => r.featuredRank === 2 },
     { label: "Rank 3", match: (r) => r.featuredRank === 3 },
   ];
-  const byRank = rankGroups.map(({ label, match }) => {
+  const groupRow = ({ label, match }: { label: string; match: (r: ImpressionFacts) => boolean }): RankRow => {
     const rs = treated.filter(match);
     return {
       label,
@@ -285,7 +292,15 @@ export function aggregate(
       engagedInSession: cell(rs.filter(inSession).length, rs.length),
       digIn7d: rateOf(rs, (r) => r.digIn7d),
     };
-  });
+  };
+  const byRank = rankGroups.map(groupRow);
+  const byItemSource = [
+    { label: "New item", match: (r: ImpressionFacts) => r.reusedItem === false },
+    { label: "Already-queued item (reused)", match: (r: ImpressionFacts) => r.reusedItem === true },
+    { label: "Not recorded", match: (r: ImpressionFacts) => r.reusedItem === null },
+  ]
+    .map(groupRow)
+    .filter((row) => row.label !== "Not recorded" || row.impressions > 0);
 
   const randomizable = rows.filter((r) => !r.featuredIsWhy && r.candidateCount > 1);
   const rank1 = randomizable.filter((r) => r.featuredRank === 1).length;
@@ -315,6 +330,7 @@ export function aggregate(
     byShown,
     conditional,
     byRank,
+    byItemSource,
     rankDraw: { randomizable: randomizable.length, rank1, share: randomizable.length ? rank1 / randomizable.length : null },
     engagementKinds,
   };
@@ -475,6 +491,7 @@ export async function getSlotResults(opts: { includeForced?: boolean } = {}): Pr
       featuredRank: r.featuredRank,
       featuredIsWhy: r.featuredIsWhy,
       candidateCount: r.candidateCount,
+      reusedItem: r.reusedItem,
       engagement: r.engagement,
       engagedAt: r.engagedAt,
       walkthroughStarted: !!r.walkthroughStartedAt,

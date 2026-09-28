@@ -17,7 +17,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { TIER_THRESHOLDS } from "@/config";
 import { API_ROUTES, type ProgressEvent } from "@/lib/api-contract";
-import type { LearnLaterItemDTO, ProfileDTO, Tier } from "@/lib/types";
+import type { ProfileDTO, Tier } from "@/lib/types";
 import { apiJson } from "./api";
 
 export interface TierUnlock {
@@ -43,14 +43,6 @@ interface ProfileContextValue {
   replaceProfile: (next: ProfileDTO) => void;
   /** Apply a local change to the latest profile (optimistic/confirmed updates before a refresh). */
   updateProfile: (fn: (current: ProfileDTO) => ProfileDTO) => void;
-  /**
-   * Items dismissed during this visit, newest first. GET /api/profile omits
-   * dismissed items, so this is what the queue's "Dismissed" section (with
-   * Restore) shows. Cleared on persona switch/reset (the provider remounts).
-   */
-  dismissedItems: LearnLaterItemDTO[];
-  /** Record a Learn It Later status change (dismissed → listed; restored/dug in → unlisted). */
-  noteItemStatus: (item: LearnLaterItemDTO) => void;
   /** Most recent unlock signal, until clearUnlock(). */
   lastUnlock: TierUnlock | null;
   clearUnlock: () => void;
@@ -76,7 +68,6 @@ const POLL_SCHEDULE_MS = [1500, 4000, 8000, 12000, 20000];
 export function ProfileProvider({ initialProfile, children }: { initialProfile: ProfileDTO; children: React.ReactNode }) {
   const [profile, setProfile] = useState(initialProfile);
   const [lastUnlock, setLastUnlock] = useState<TierUnlock | null>(null);
-  const [dismissedItems, setDismissedItems] = useState<LearnLaterItemDTO[]>([]);
   const profileRef = useRef(profile);
   const listeners = useRef(new Set<UnlockListener>());
   /** Highest tier already announced, so polling never re-announces a `progress` unlock. */
@@ -118,13 +109,6 @@ export function ProfileProvider({ initialProfile, children }: { initialProfile: 
       return profileRef.current;
     }
   }, [commit]);
-
-  const noteItemStatus = useCallback((item: LearnLaterItemDTO) => {
-    setDismissedItems((cur) => {
-      const rest = cur.filter((i) => i.id !== item.id);
-      return item.status === "dismissed" ? [item, ...rest] : rest;
-    });
-  }, []);
 
   const beginTurn = useCallback(
     (): TurnSnapshot => ({ tier: profileRef.current.tier, lastAssessedAt: profileRef.current.lastAssessedAt }),
@@ -204,8 +188,6 @@ export function ProfileProvider({ initialProfile, children }: { initialProfile: 
       refresh,
       replaceProfile: commit,
       updateProfile,
-      dismissedItems,
-      noteItemStatus,
       lastUnlock,
       clearUnlock,
       subscribeUnlock,
@@ -218,8 +200,6 @@ export function ProfileProvider({ initialProfile, children }: { initialProfile: 
       refresh,
       commit,
       updateProfile,
-      dismissedItems,
-      noteItemStatus,
       lastUnlock,
       clearUnlock,
       subscribeUnlock,

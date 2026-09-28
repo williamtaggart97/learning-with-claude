@@ -4,38 +4,31 @@
 import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 import { API_ROUTES, type DigInResponse } from "@/lib/api-contract";
-import type { LearnLaterItemDTO, ProfileDTO } from "@/lib/types";
+import { withLearnLaterItem as withItem } from "@/lib/learn-later-list";
+import type { LearnLaterItemDTO } from "@/lib/types";
 import { ApiRequestError, apiJson } from "./api";
 import { useConversations } from "./conversations-store";
 import { useProfile } from "./profile-store";
 
-/** Same order as GET /api/profile within a status: newest first, then id. */
-function byNewest(a: LearnLaterItemDTO, b: LearnLaterItemDTO): number {
-  return Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.id.localeCompare(b.id);
-}
-
-/** The profile with `item` listed (queued / dug in) or unlisted (dismissed). */
-function withItem(profile: ProfileDTO, item: LearnLaterItemDTO): ProfileDTO {
-  const rest = profile.learnLater.filter((i) => i.id !== item.id);
-  const learnLater = item.status === "dismissed" ? rest : [...rest, item].sort(byNewest);
-  return { ...profile, learnLater };
-}
-
 export function useLearnLaterActions() {
   const router = useRouter();
   const { upsert } = useConversations();
-  const { refresh, noteItemStatus, updateProfile } = useProfile();
+  const { refresh, updateProfile } = useProfile();
 
   /**
    * POST dig-in, then open the new conversation. The /c/[id] page derives the
    * kickoff server-side and auto-sends it once (see src/lib/ui/kickoff.ts).
+   * `endpoint` defaults to the Learn It Later dig-in; the end-of-answer slot
+   * passes POST /api/slot/[id]/dig-in (same response, also logs the
+   * engagement, R15). `onStarted` runs just before navigating (e.g. to mark
+   * the slot "Dug in" for when the user comes back).
    */
   const digIn = useCallback(
-    async (item: LearnLaterItemDTO) => {
-      const res = await apiJson<DigInResponse>(API_ROUTES.learnLaterDigIn(item.id), { method: "POST" });
+    async (item: LearnLaterItemDTO, opts?: { endpoint?: string; onStarted?: (res: DigInResponse, item: LearnLaterItemDTO) => void }) => {
+      const res = await apiJson<DigInResponse>(opts?.endpoint ?? API_ROUTES.learnLaterDigIn(item.id), { method: "POST" });
       const now = new Date().toISOString();
       const dugIn: LearnLaterItemDTO = { ...item, status: "dug_in" };
-      noteItemStatus(dugIn);
+      opts?.onStarted?.(res, dugIn);
       updateProfile((p) => withItem(p, dugIn));
       upsert({
         id: res.conversationId,
@@ -49,7 +42,7 @@ export function useLearnLaterActions() {
       router.push(`/c/${res.conversationId}`);
       return res;
     },
-    [noteItemStatus, refresh, router, updateProfile, upsert],
+    [refresh, router, updateProfile, upsert],
   );
 
   /**
@@ -69,7 +62,6 @@ export function useLearnLaterActions() {
         // On a no-op restore (R13: another queued item covers it) this item
         // stays dismissed and the covering item is (still) listed.
         const self = updated.id === item.id ? updated : ({ ...item, status: "dismissed" } as LearnLaterItemDTO);
-        noteItemStatus(self);
         updateProfile((p) => (updated.id === item.id ? withItem(p, updated) : withItem(withItem(p, self), updated)));
         void refresh();
         return updated;
@@ -78,7 +70,7 @@ export function useLearnLaterActions() {
         throw err;
       }
     },
-    [noteItemStatus, refresh, updateProfile],
+    [refresh, updateProfile],
   );
 
   return { digIn, setStatus };

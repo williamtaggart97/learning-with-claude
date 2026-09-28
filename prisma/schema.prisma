@@ -355,9 +355,15 @@ model SlotImpression {
   // ── Featured hidden decision (E2, E3) ──
   /// Snapshot of the saved (always, E3) LearnLaterItem id.
   learnLaterItemId            String?
-  /// Snapshot of what was featured (the item may later change or be deleted).
+  /// Snapshot of what was featured (the item may later change or be deleted):
+  /// the title of the item actually shown — an already-queued item's title
+  /// when R13 reused one, else the router's callout title.
   featuredTitle               String
   featuredConceptSlug         String?
+  /// True when the featured callout matched an already-queued Learn It Later
+  /// item (R13) and that item was shown instead of a new one; null for
+  /// impressions logged before this was recorded.
+  reusedItem                  Boolean?
   /// The user's mastery score on the featured concept when the slot was
   /// shown; null when there is no concept or no mastery yet (E5 mastery delta).
   featuredMasteryAtImpression Float?
@@ -379,7 +385,9 @@ model SlotImpression {
   /// The variant drawn — the randomized assignment; results group by this
   /// (intent-to-treat). Differs from `variant` only after a fallback.
   drawnVariant     SlotVariant
-  /// Why `variant` differs from `drawnVariant`: "content_not_ready" | "content_failed".
+  /// Why `variant` differs from `drawnVariant`: "content_not_ready" |
+  /// "content_failed" | "item_changed" (the saved item isn't the one the
+  /// payload was written for).
   fallbackReason   String?
   eligibleVariants SlotVariant[]
   /// Weights snapshot for the eligible variants at draw time.

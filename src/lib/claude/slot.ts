@@ -6,6 +6,7 @@ import { FRAMING, MODELS } from "@/config";
 import { callStructured } from "@/lib/claude/client";
 import {
   formatLearner,
+  formatSlotLearner,
   slotContentSystem,
   slotContentUserPrompt,
   walkthroughUserPrompt,
@@ -69,8 +70,68 @@ export function shuffleQuickCheck(q: QuickCheckPayload, rng: () => number = Math
   return { ...q, options: order.map((i) => q.options[i]), correctIndex: order.indexOf(q.correctIndex) };
 }
 
+// ─── Copy guards (walkthrough / apply) ──────────────────────────────────────
+
+const STOPWORDS = new Set(
+  (
+    "a an the and or but if then than so to of in on at by for from with without into onto about over under " +
+    "is are was were be been being am do does did done doing have has had having can could would should will shall may might must " +
+    "i me my we us our you your yours it its this that these those there here what which who whom whose why how when where " +
+    "not no yes just more most much many some any all each every very really also only even still too " +
+    "want wants see seeing look looking let lets get gets make makes take takes use using used work works working " +
+    "matter matters mattering quick quickly now next same new way ways thing things something " +
+    "check apply applies applied project projects model models data dataset analysis result results case cases walk through"
+  ).split(" "),
+);
+
+const SUFFIXES = ["ational", "ation", "ities", "ions", "ings", "ment", "ness", "ity", "ion", "ing", "ies", "ied", "age", "ed", "es", "ly", "al", "s", "e"];
+
+/** Crude suffix-stripping stemmer: enough to match "leak"/"leakage", "impute"/"imputation". */
+export function stemWord(w: string): string {
+  for (const suf of SUFFIXES) {
+    if (suf === "s" && w.endsWith("ss")) continue;
+    if (w.length - suf.length >= 3 && w.endsWith(suf)) {
+      return suf === "ies" || suf === "ied" ? `${w.slice(0, -3)}y` : w.slice(0, -suf.length);
+    }
+  }
+  return w;
+}
+
+/** Stemmed content words (lowercase, stopwords and words under 3 letters removed). */
+export function contentWords(text: string): string[] {
+  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => w.length >= 3 && !STOPWORDS.has(w)).map(stemWord);
+}
+
+function stemsMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= 3 && long.startsWith(short);
+}
+
+/** Does the headline share at least one content word with the item's title, slug or preview? */
+export function headlineAboutItem(headline: string, item: Pick<SlotItemPrompt, "title" | "conceptSlug" | "preview">): boolean {
+  const target = contentWords(`${item.title} ${item.conceptSlug ?? ""} ${item.preview}`);
+  return contentWords(headline).some((w) => target.some((t) => stemsMatch(w, t)));
+}
+
+/** Claude can't run code or see the user's data: apply copy must not promise it (R18). */
+const OVERPROMISE = /\b(re)?(comput\w*|calculat\w*|run|runs|running|execut\w*)\b/i;
+export const APPLY_FALLBACK_BUTTON = "Show me how";
+
+const shortTitle = (t: string) => (t.length > 90 ? `${t.slice(0, 89)}…` : t);
+
+/** Template headline used when the model's headline drifted to another concept. */
+export function fallbackHeadline(variant: "walkthrough" | "apply", title: string): string {
+  return variant === "walkthrough" ? `Want to see why ${shortTitle(title)} matters here?` : `See how ${shortTitle(title)} applies to your project`;
+}
+
 /** Model output → SlotContent (throws if unusable). Exported for tests. */
-export function normalizeSlotContent(variant: SlotContentVariant, raw: unknown, rng: () => number = Math.random): SlotContent {
+export function normalizeSlotContent(
+  variant: SlotContentVariant,
+  raw: unknown,
+  rng: () => number = Math.random,
+  item?: Pick<SlotItemPrompt, "title" | "conceptSlug" | "preview">,
+): SlotContent {
   const r = (raw ?? {}) as Record<string, unknown>;
   if (variant === "quickcheck") {
     const all = Array.isArray(r.options) ? r.options.map(str) : [];
@@ -100,11 +161,18 @@ export function normalizeSlotContent(variant: SlotContentVariant, raw: unknown, 
     });
     return { variant, quickcheck: shuffleQuickCheck(q, rng) };
   }
-  const copy = SlotCopySchema.parse({
-    headline: str(r.headline),
-    subline: str(r.subline),
-    buttonLabel: variant === "walkthrough" ? WALKTHROUGH_BUTTON_LABEL : str(r.buttonLabel),
-  });
+  let headline = str(r.headline);
+  let subline = str(r.subline);
+  let buttonLabel = variant === "walkthrough" ? WALKTHROUGH_BUTTON_LABEL : str(r.buttonLabel);
+  if (item && headline && !headlineAboutItem(headline, item)) headline = fallbackHeadline(variant, item.title);
+  if (variant === "apply") {
+    if (buttonLabel && OVERPROMISE.test(buttonLabel)) buttonLabel = APPLY_FALLBACK_BUTTON;
+    if (item && headline && OVERPROMISE.test(headline)) headline = fallbackHeadline("apply", item.title);
+    if (subline && OVERPROMISE.test(subline)) {
+      subline = item ? `We'll walk through how ${shortTitle(item.title)} applies to your work.` : "We'll walk through how it applies to your work.";
+    }
+  }
+  const copy = SlotCopySchema.parse({ headline, subline, buttonLabel });
   return { variant, copy };
 }
 
@@ -139,13 +207,13 @@ export async function generateSlotContent(
         content: slotContentUserPrompt({
           item: input.item,
           message: input.message,
-          learnerText: formatLearner(input.learner),
+          learnerText: formatSlotLearner(input.learner, input.item.conceptSlug),
           turns: input.turns.slice(-4),
         }),
       },
     ],
     jsonSchema: COPY_JSON[variant],
-    parse: (raw) => normalizeSlotContent(variant, raw),
+    parse: (raw) => normalizeSlotContent(variant, raw, Math.random, input.item),
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
 }

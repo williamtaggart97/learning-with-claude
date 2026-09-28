@@ -6,7 +6,7 @@
 // remounts all client state.
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { CheckIcon, ChevronUpDownIcon, ResetIcon } from "@/components/icons";
+import { ChartIcon, CheckIcon, ChevronUpDownIcon, ResetIcon } from "@/components/icons";
 import { TierBadge } from "@/components/profile/section";
 import { ModalDialog } from "@/components/ui/modal-dialog";
 import { API_ROUTES, type PersonaStateResponse } from "@/lib/api-contract";
@@ -181,6 +181,19 @@ export function PersonaSwitcher() {
               <ResetIcon className="size-4 text-ink-muted" />
               Reset {persona.displayName} to the start
             </button>
+            {/* Reviewer-facing readout of the end-of-answer experiment (E5). New tab, so the chat keeps running. */}
+            <a
+              href={API_ROUTES.results}
+              target="_blank"
+              rel="noopener"
+              data-menu-item
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-ink transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <ChartIcon className="size-4 text-ink-muted" />
+              Experiment results
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
           </div>
           {error && (
             <p role="alert" className="px-2.5 pt-1 pb-1.5 text-xs text-danger">

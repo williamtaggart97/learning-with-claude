@@ -214,8 +214,9 @@
  *
  * ── End-of-answer slot (E1–E5) ───────────────────────────────────────────────
  *
- * R15 Master switch: EXPERIMENT.active (env EXPERIMENT_ACTIVE; default FALSE
- *     until the slot UI renders it — the UI phase flips the default).
+ * R15 Master switch: EXPERIMENT.active (env EXPERIMENT_ACTIVE; default TRUE
+ *     now that the UI renders the slot — set EXPERIMENT_ACTIVE=0 to turn it
+ *     off).
  *       Inactive: nothing below happens. No draw, no SlotImpression, no
  *         `slot` event, MessageDTO.data.slot is null; the router's top item is
  *         saved and emitted via `callouts` exactly as before (R8).
@@ -246,6 +247,13 @@
  *       none (control): NO `callouts` event, then `slot` with variant
  *         "none" — render nothing. History matches: data.callouts is [] and
  *         data.slot.variant is "none".
+ *     The item shown is the one R13 saves: when a queued item already covers
+ *     the featured callout (findReusableLearnLaterItem, resolved at draw
+ *     time), the payload is generated from THAT item's title / preview /
+ *     appliedContext, and the impression records featuredTitle = the shown
+ *     item's title plus reusedItem = true. If the saved item differs from the
+ *     one the payload was written for (the queue changed mid-answer), the
+ *     slot falls back to "card" (fallbackReason "item_changed").
  *     The featured item is ALWAYS saved to Learn It Later (E3), whatever the
  *     variant, including "none". A stopped answer gets no item and no slot. A
  *     tier unlock would replace the slot (E4, not logged) — in practice no
@@ -265,7 +273,9 @@
  *     Dev only (NODE_ENV !== "production"): POST /api/chat?slotVariant=<v>
  *     (or header x-slot-variant) forces an eligible variant; flagged forced,
  *     excluded from /results unless /results?forced=1. Needs the experiment
- *     active.
+ *     active. The chat UI forwards it from the page URL (open
+ *     /?slotVariant=quickcheck; remembered for the tab, ?slotVariant=off
+ *     clears it; see src/lib/client/dev-slot-variant.ts).
  * POST /api/slot/[impressionId]/dig-in         → DigInResponse
  *     Any variant but "none". Same as POST /api/learn-later/[id]/dig-in for
  *     the featured item (then send kickoffMessage via POST /api/chat, R9);
@@ -303,9 +313,19 @@
  * ── Profile ──────────────────────────────────────────────────────────────────
  *
  * GET   /api/profile                   → ProfileDTO (includes lastAssessedAt, R12)
+ *   `learnLater` = queued + dug-in items; `dismissedLearnLater` = dismissed
+ *   items, most recently dismissed first (≤50), for the queue's "Dismissed"
+ *   section — so it survives reloads.
  * PATCH /api/profile                   body ProfilePatch → ProfileDTO
  *   Tier 2 only (403 tier_locked otherwise). Edited style dimensions get
  *   `*Overridden = true`; context edits set `userEdited = true`.
+ *   Reset to Claude's estimate: `{ resetLearningStyle: ["briefVsThorough"] }`
+ *   (any of intuitionVsFormal | entryPoint | briefVsThorough) clears the
+ *   override so the assessor infers the dimension again. The value stays as
+ *   a weak prior with confidence 0.15 ("still figuring this out") — the
+ *   pre-edit estimate isn't stored, so it can't be restored (see
+ *   src/lib/style-patch.ts). No-op for dimensions that aren't overridden;
+ *   setting and resetting the same dimension in one patch → 400.
  *
  * ── Personas (X4–X6) ─────────────────────────────────────────────────────────
  *

@@ -93,7 +93,7 @@ export default async function ResultsPage({ searchParams }: PageProps<"/results"
       </p>
       {!r.active && (
         <p className="mt-3 max-w-2xl rounded-card border border-line bg-surface-muted/60 px-4 py-3 text-sm text-ink-muted">
-          The experiment is currently <strong>inactive</strong> (EXPERIMENT_ACTIVE is off): new answers are not drawn or
+          The experiment is currently <strong>inactive</strong> (EXPERIMENT_ACTIVE=0): new answers are not drawn or
           logged. Anything below is from earlier active periods.
         </p>
       )}
@@ -269,6 +269,26 @@ export default async function ResultsPage({ searchParams }: PageProps<"/results"
       </p>
       <Table head={["Featured item", "Drawn", "Engaged (session)", "Dig-in ≤ 7d"]}>
         {r.byRank.map((row) => (
+          <tr key={row.label} className={rowCls}>
+            <td className={`${td} font-medium`}>{row.label}</td>
+            <td className={td}>{row.impressions}</td>
+            <td className={td}>
+              <Rate c={row.engagedInSession} />
+            </td>
+            <td className={td}>
+              <Rate c={row.digIn7d} />
+            </td>
+          </tr>
+        ))}
+      </Table>
+
+      <h2 className="mt-10 font-serif text-xl font-medium">New vs already-queued item</h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        When the featured concept is already in the user&apos;s queue, the slot shows that queued item (not a new
+        one) and its copy is written about it. Control draws are excluded.
+      </p>
+      <Table head={["Featured item", "Drawn", "Engaged (session)", "Dig-in ≤ 7d"]}>
+        {r.byItemSource.map((row) => (
           <tr key={row.label} className={rowCls}>
             <td className={`${td} font-medium`}>{row.label}</td>
             <td className={td}>{row.impressions}</td>

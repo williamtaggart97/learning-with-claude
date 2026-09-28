@@ -1,11 +1,13 @@
 "use client";
 // "How you learn" (P2, P3): the three style dimensions as labelled spectrums
 // with a confidence band. Read-only at Tier 1; adjustable at Tier 2 (PATCH
-// /api/profile marks a dimension overridden — "You set this").
+// /api/profile marks a dimension overridden — "You set this"). An overridden
+// dimension's editor offers "Reset to Claude's estimate" (resetLearningStyle),
+// which hands it back to the assessor.
 import { useId, useState } from "react";
 import { usePatchProfile } from "@/lib/client/profile-patch";
 import { useReturnFocus } from "@/lib/client/use-return-focus";
-import type { EntryPoint, LearningStyleDTO, StyleAxisDTO } from "@/lib/types";
+import type { EntryPoint, LearningStyleDTO, StyleAxisDTO, StyleDimension } from "@/lib/types";
 import {
   AXES,
   type AxisMeta,
@@ -200,13 +202,18 @@ function AxisEditor({
         </span>
       </p>
       <InlineError message={error} />
-      <div className="flex justify-end gap-1">
-        <button type="button" onClick={onDone} className={smallButton} disabled={saving}>
-          Cancel
-        </button>
-        <button type="button" onClick={save} className={primarySmallButton} disabled={saving || unchanged}>
-          {saving ? "Saving…" : "Save"}
-        </button>
+      <div className="flex flex-wrap items-center gap-1">
+        {axis.overridden && (
+          <ResetToEstimate dimension={meta.key} disabled={saving} onBusy={setSaving} onError={setError} onDone={onDone} />
+        )}
+        <div className="ml-auto flex gap-1">
+          <button type="button" onClick={onDone} className={smallButton} disabled={saving}>
+            Cancel
+          </button>
+          <button type="button" onClick={save} className={primarySmallButton} disabled={saving || unchanged}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -233,7 +240,12 @@ function EntryPointCard({ entry, editable }: { entry: LearningStyleDTO["entryPoi
         </div>
       </div>
       {editing ? (
-        <EntryPointEditor value={entry.value} labelledBy={titleId} onDone={() => setEditing(false)} />
+        <EntryPointEditor
+          value={entry.value}
+          overridden={entry.overridden}
+          labelledBy={titleId}
+          onDone={() => setEditing(false)}
+        />
       ) : (
         <>
           <ul
@@ -270,10 +282,12 @@ function EntryPointCard({ entry, editable }: { entry: LearningStyleDTO["entryPoi
 
 function EntryPointEditor({
   value,
+  overridden,
   labelledBy,
   onDone,
 }: {
   value: EntryPoint | null;
+  overridden: boolean;
   labelledBy: string;
   onDone: () => void;
 }) {
@@ -327,14 +341,67 @@ function EntryPointEditor({
       </div>
       <p className="text-sm text-ink-muted">{describeEntryPoint(draft)}</p>
       <InlineError message={error} />
-      <div className="flex justify-end gap-1">
-        <button type="button" onClick={onDone} className={smallButton} disabled={saving}>
-          Cancel
-        </button>
-        <button type="button" onClick={save} className={primarySmallButton} disabled={saving}>
-          {saving ? "Saving…" : "Save"}
-        </button>
+      <div className="flex flex-wrap items-center gap-1">
+        {overridden && (
+          <ResetToEstimate dimension="entryPoint" disabled={saving} onBusy={setSaving} onError={setError} onDone={onDone} />
+        )}
+        <div className="ml-auto flex gap-1">
+          <button type="button" onClick={onDone} className={smallButton} disabled={saving}>
+            Cancel
+          </button>
+          <button type="button" onClick={save} className={primarySmallButton} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * "Reset to Claude’s estimate" for a dimension the user set: clears the
+ * override (PATCH resetLearningStyle) so Claude goes back to inferring it.
+ * Claude's earlier estimate isn't stored, so it restarts from a hedged
+ * "still figuring this out" read (see src/lib/style-patch.ts).
+ */
+function ResetToEstimate({
+  dimension,
+  disabled,
+  onBusy,
+  onError,
+  onDone,
+}: {
+  dimension: StyleDimension;
+  disabled: boolean;
+  onBusy: (busy: boolean) => void;
+  onError: (message: string | null) => void;
+  onDone: () => void;
+}) {
+  const patch = usePatchProfile();
+  const hintId = useId();
+  const reset = async () => {
+    onBusy(true);
+    onError(null);
+    const res = await patch({ resetLearningStyle: [dimension] });
+    onBusy(false);
+    if (res.ok) onDone();
+    else onError(res.message);
+  };
+  return (
+    <>
+      <span id={hintId} className="sr-only">
+        Claude will go back to inferring this from how you learn.
+      </span>
+      <button
+        type="button"
+        onClick={reset}
+        disabled={disabled}
+        aria-describedby={hintId}
+        title="Claude will go back to inferring this from how you learn"
+        className={smallButton}
+      >
+        Reset to Claude’s estimate
+      </button>
+    </>
   );
 }

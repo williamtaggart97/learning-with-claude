@@ -2,6 +2,19 @@
 import { LearnIcon } from "@/components/icons";
 import type { StarterPrompt } from "./starter-prompts";
 
+/** Dot colour per router path (L4); the legend below uses the same. */
+const KIND_DOT: Record<StarterPrompt["kind"], string> = {
+  concept: "bg-learn-500",
+  lookup: "bg-accent",
+  task: "bg-spark",
+};
+
+const LEGEND: { kind: StarterPrompt["kind"]; label: string }[] = [
+  { kind: "concept", label: "Concept — usually framed first" },
+  { kind: "lookup", label: "Lookup — answered right away" },
+  { kind: "task", label: "Task — the work comes first" },
+];
+
 /** New-chat greeting (D2). The composer is passed in so it sits between greeting and starters. */
 export function EmptyState({
   name,
@@ -47,7 +60,7 @@ export function EmptyState({
                 <span className="flex items-center gap-2 text-sm font-medium text-ink">
                   <span
                     aria-hidden="true"
-                    className={`size-1.5 rounded-full ${s.kind === "concept" ? "bg-learn-500" : "bg-accent"}`}
+                    className={`size-1.5 shrink-0 rounded-full ${KIND_DOT[s.kind]}`}
                   />
                   {s.title}
                 </span>
@@ -57,14 +70,12 @@ export function EmptyState({
           ))}
         </ul>
         <p className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-ink-muted">
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className="size-1.5 rounded-full bg-learn-500" />
-            Concept — usually framed with a few questions
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className="size-1.5 rounded-full bg-accent" />
-            Lookup — answered right away
-          </span>
+          {LEGEND.filter((l) => starters.some((s) => s.kind === l.kind)).map((l) => (
+            <span key={l.kind} className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className={`size-1.5 rounded-full ${KIND_DOT[l.kind]}`} />
+              {l.label}
+            </span>
+          ))}
         </p>
       </div>
     </div>

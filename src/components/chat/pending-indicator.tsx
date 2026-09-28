@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { LearnIcon } from "@/components/icons";
 
-export type PendingKind = "route" | "framed" | "skip" | "kickoff";
+export type PendingKind = "route" | "framed" | "skip" | "kickoff" | "walkthrough" | "apply";
 
 const STEPS: Record<PendingKind, { at: number; text: string }[]> = {
   route: [
@@ -20,6 +20,14 @@ const STEPS: Record<PendingKind, { at: number; text: string }[]> = {
   skip: [
     { at: 0, text: "Answering directly…" },
     { at: 3000, text: "Saving the concept to Learn It Later…" },
+  ],
+  walkthrough: [
+    { at: 0, text: "Picking the steps worth walking through…" },
+    { at: 3000, text: "Writing a couple of questions…" },
+  ],
+  apply: [
+    { at: 0, text: "Looking at what I know about your project…" },
+    { at: 3000, text: "Working out where this shows up in your work…" },
   ],
   kickoff: [
     { at: 0, text: "Connecting this back to where it came up…" },

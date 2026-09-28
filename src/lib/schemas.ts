@@ -253,24 +253,39 @@ export const FramingAnswerRequestSchema = z.object({
   skip: z.boolean().optional(),
 });
 
-/** PATCH /api/profile — Tier 2 only. Omitted fields are unchanged. */
-export const ProfilePatchSchema = z.object({
-  learningStyle: z
-    .object({
-      intuitionVsFormal: StyleAxisValueSchema.optional(),
-      entryPoint: EntryPointSchema.nullable().optional(),
-      briefVsThorough: StyleAxisValueSchema.optional(),
-    })
-    .optional(),
-  userContext: z
-    .object({
-      field: z.string().nullable().optional(),
-      projects: z.array(z.string()).optional(),
-      dataTypes: z.array(z.string()).optional(),
-      notes: z.string().nullable().optional(),
-    })
-    .optional(),
-});
+/** The three style dimensions (P2), keyed as in LearningStyleDTO. */
+export const StyleDimensionSchema = z.enum(["intuitionVsFormal", "entryPoint", "briefVsThorough"]);
+
+/**
+ * PATCH /api/profile — Tier 2 only. Omitted fields are unchanged.
+ * `resetLearningStyle` hands dimensions back to Claude ("Reset to Claude's
+ * estimate"; see applyStylePatch in src/lib/style-patch.ts). An explicit list
+ * rather than `null` values, because `entryPoint: null` already means "no
+ * preference". A dimension can't be both set and reset in one patch (400).
+ */
+export const ProfilePatchSchema = z
+  .object({
+    learningStyle: z
+      .object({
+        intuitionVsFormal: StyleAxisValueSchema.optional(),
+        entryPoint: EntryPointSchema.nullable().optional(),
+        briefVsThorough: StyleAxisValueSchema.optional(),
+      })
+      .optional(),
+    resetLearningStyle: z.array(StyleDimensionSchema).max(3).optional(),
+    userContext: z
+      .object({
+        field: z.string().nullable().optional(),
+        projects: z.array(z.string()).optional(),
+        dataTypes: z.array(z.string()).optional(),
+        notes: z.string().nullable().optional(),
+      })
+      .optional(),
+  })
+  .refine((p) => !(p.resetLearningStyle ?? []).some((d) => p.learningStyle?.[d] !== undefined), {
+    message: "A style dimension can't be set and reset in the same patch",
+    path: ["resetLearningStyle"],
+  });
 
 export const LearnLaterPatchSchema = z.object({
   status: z.enum([LearnLaterStatus.queued, LearnLaterStatus.dismissed]),

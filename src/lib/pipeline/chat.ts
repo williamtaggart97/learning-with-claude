@@ -16,7 +16,7 @@ import { planRoute } from "@/lib/pipeline/route-policy";
 import { answerAndPersist, linkedAbort, touchConversation } from "@/lib/pipeline/stream";
 import { ChatRequestSchema } from "@/lib/schemas";
 import { getSessionUser } from "@/lib/session";
-import { createSlotImpression, devForcedVariant, resolveSlotContent, startSlot } from "@/lib/slot/service";
+import { createSlotImpression, devForcedVariant, reconcileSlotContent, resolveSlotContent, startSlot } from "@/lib/slot/service";
 import type { FramingMessageData, AnswerMessageData, SlotDTO, SlotVariant } from "@/lib/types";
 
 export async function handleChat(request: Request): Promise<Response> {
@@ -208,8 +208,7 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
     }
 
     // ── Lookup / task / direct: answer now (L5, L8).
-    // Experiment inactive (EXPERIMENT.active = false, the default until the
-    // slot UI ships): no draw, no impression, no `slot` event — the router's
+    // Experiment inactive (EXPERIMENT_ACTIVE=0): no draw, no impression, no `slot` event — the router's
     // top item is saved and emitted via `callouts` exactly as before.
     // Experiment active: the end-of-answer slot (E1–E5) is drawn up front so
     // its payload is generated in parallel with the answer; the featured item
@@ -224,6 +223,7 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
     const mode = plan.answerMode ?? "lookup";
     const slotRun = EXPERIMENT.active
       ? await startSlot({
+          userId,
           conversationId,
           candidates: plan.candidates,
           learner,
@@ -241,20 +241,23 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
       persist: async (text, { incomplete }) => {
         // A stopped answer keeps only the text: its item and slot were never shown.
         // Network wait happens BEFORE the transaction.
-        const resolved = !incomplete && slotRun ? await resolveSlotContent(slotRun) : null;
+        const fetched = !incomplete && slotRun ? await resolveSlotContent(slotRun) : null;
         const featured = incomplete ? null : (slotRun?.plan.featured.callout ?? plan.persist[0] ?? null);
-        // Control arm: the item is saved (E3) but surfaced nowhere — no
-        // `callouts` event and no calloutItemIds, so history shows nothing either.
-        const surfaced = resolved?.variant !== "none";
         return db.$transaction(async (tx) => {
-          const item = featured
-            ? (
-                await upsertLearnLaterItem(
-                  { userId, callout: featured, origin: "flagged", sourceConversationId: conversationId, sourceMessageId: userMessageId },
-                  tx,
-                )
-              ).item
+          const saved = featured
+            ? await upsertLearnLaterItem(
+                { userId, callout: featured, origin: "flagged", sourceConversationId: conversationId, sourceMessageId: userMessageId },
+                tx,
+              )
             : null;
+          const item = saved?.item ?? null;
+          // The payload describes the item resolved at draw time (R13 reuse);
+          // if the saved item differs, fall back to the card.
+          const resolved =
+            fetched && slotRun && saved ? reconcileSlotContent(slotRun, fetched, saved.created ? null : saved.item.id) : fetched;
+          // Control arm: the item is saved (E3) but surfaced nowhere — no
+          // `callouts` event and no calloutItemIds, so history shows nothing either.
+          const surfaced = resolved?.variant !== "none";
           const data: AnswerMessageData | null = item && surfaced ? { calloutItemIds: [item.id] } : null;
           const msg = await tx.message.create({
             data: {
@@ -267,7 +270,7 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
             select: { id: true },
           });
           let slot: SlotDTO | null = null;
-          if (item && slotRun && resolved) {
+          if (saved && slotRun && resolved) {
             slot = await createSlotImpression(tx, {
               run: slotRun,
               resolved,
@@ -276,7 +279,8 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
               userMessageId,
               messageId: msg.id,
               answerMode: mode,
-              item,
+              item: saved.item,
+              reusedItem: !saved.created,
             });
           }
           await touchConversation(tx, conversationId);

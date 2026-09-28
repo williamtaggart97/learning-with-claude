@@ -316,6 +316,7 @@ const mk = (over: Partial<ImpressionFacts>): ImpressionFacts => ({
   featuredRank: 1,
   featuredIsWhy: false,
   candidateCount: 2,
+  reusedItem: false,
   engagement: null,
   engagedAt: null,
   walkthroughStarted: false,
@@ -451,7 +452,7 @@ function runFor(variant: SlotVariant, content: SlotRun["content"]): SlotRun {
     forcedVariant: variant,
   })!;
   assert.equal(plan.variant, variant);
-  return { plan, content };
+  return { plan, contentItemId: null, content };
 }
 
 test("resolveSlotContent: ready payload, timeout → card, failure → card; card/none never wait", async () => {

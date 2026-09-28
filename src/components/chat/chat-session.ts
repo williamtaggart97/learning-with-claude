@@ -8,8 +8,15 @@
 // /api/chat and /api/framing/[id]/answer, and consumes their NDJSON streams
 // with readNdjson. Handles stop (AbortController), inline errors with Retry,
 // framing card reverts, sidebar updates and the profile hooks (beginTurn /
-// applyProgress / afterAnswer).
-import { API_ROUTES, type ChatStreamEvent, type ProgressEvent } from "@/lib/api-contract";
+// applyProgress / afterAnswer). Also runs the streaming end-of-answer slot
+// actions (walk-through R16, apply R18) and keeps slot state (R15) in sync.
+import {
+  API_ROUTES,
+  applyMessageText,
+  walkthroughMessageText,
+  type ChatStreamEvent,
+  type ProgressEvent,
+} from "@/lib/api-contract";
 import { readNdjson } from "@/lib/ndjson";
 import type {
   ConversationDTO,
@@ -18,8 +25,10 @@ import type {
   FramingResponse,
   LearnLaterItemDTO,
   MessageDTO,
+  SlotDTO,
 } from "@/lib/types";
 import { ApiRequestError, apiJson, friendlyError, isAbortError, postForStream } from "@/lib/client/api";
+import { chatUrl } from "@/lib/client/dev-slot-variant";
 import { releaseKickoff } from "@/lib/client/kickoff-guard";
 import type { ProfileDTO } from "@/lib/types";
 import type { TurnSnapshot } from "@/lib/client/profile-store";
@@ -91,7 +100,12 @@ interface StreamResult {
   errorMessage?: string;
   /** clientKey of the answer bubble, or null if none was created. */
   answerKey: string | null;
+  /** From the terminal event: the framing exchange (framing) or the answer message (done). */
+  exchangeId?: string;
+  messageId?: string;
 }
+
+type StreamingSlot = Extract<SlotDTO, { variant: "walkthrough" | "apply" }>;
 
 const STOPPED_SUFFIX = "\n\n_(Stopped.)_";
 const STOPPED_BEFORE = "_(Stopped before Claude answered.)_";
@@ -267,6 +281,8 @@ export class ChatSession {
     const host = this.host();
     let answerKey: string | null = null;
     let sawDelta = false;
+    /** A Learn It Later item arrived with this answer (callouts / slot, E3). */
+    let sawItem = false;
     let buffered = "";
     let frame: ReturnType<typeof setTimeout> | null = null;
     // Terminal event seen. We keep reading until the server closes the
@@ -350,7 +366,7 @@ export class ChatSession {
               messages: [...this.state.messages, framing],
               announcement: "Claude asked a few framing questions before answering.",
             });
-            terminal = { outcome: "framing", sawDelta, answerKey };
+            terminal = { outcome: "framing", sawDelta, answerKey, exchangeId: event.exchangeId, messageId: event.messageId };
             break;
           }
           case "progress":
@@ -366,9 +382,27 @@ export class ChatSession {
           case "callouts": {
             flush();
             ensureAnswer();
+            sawItem ||= event.items.length > 0;
             const key = answerKey;
             this.setMessages((cur) =>
-              cur.map((m) => (m.clientKey === key && m.kind === "answer" ? { ...m, data: { callouts: event.items } } : m)),
+              cur.map((m) =>
+                m.clientKey === key && m.kind === "answer" ? { ...m, data: { ...m.data, callouts: event.items } } : m,
+              ),
+            );
+            break;
+          }
+          case "slot": {
+            // R15: the end-of-answer box replaces the callout chips. It can
+            // land up to EXPERIMENT.contentWaitMs after the last delta; the
+            // finished text simply stays in place meanwhile.
+            flush();
+            ensureAnswer();
+            sawItem = true;
+            const key = answerKey;
+            this.setMessages((cur) =>
+              cur.map((m) =>
+                m.clientKey === key && m.kind === "answer" ? { ...m, data: { ...m.data, slot: event.slot } } : m,
+              ),
             );
             break;
           }
@@ -384,7 +418,10 @@ export class ChatSession {
               this.syncSoon(300);
             }
             host.afterAnswer(turn);
-            terminal = { outcome: "done", sawDelta, answerKey };
+            // The featured item is already queued (E3): show it in the queue
+            // now rather than after the first assessor poll.
+            if (sawItem) void host.refreshProfile();
+            terminal = { outcome: "done", sawDelta, answerKey, messageId: event.messageId };
             break;
           }
           case "error": {
@@ -524,7 +561,7 @@ export class ChatSession {
 
     try {
       const response = await postForStream(
-        API_ROUTES.chat,
+        chatUrl(),
         { conversationId: this.state.conversationId ?? undefined, message },
         controller.signal,
       );
@@ -631,14 +668,138 @@ export class ChatSession {
     this.abort?.abort();
   };
 
-  /** Replace a Learn It Later item everywhere it appears (after dismiss/dig in). */
+  /** Replace a Learn It Later item everywhere it appears (chips and slots; after dismiss/dig in). */
   updateCallout = (item: LearnLaterItemDTO) => {
     this.setMessages((cur) =>
+      cur.map((m) => {
+        if (m.kind !== "answer") return m;
+        const slot = m.data.slot;
+        const inCallouts = m.data.callouts.some((c) => c.id === item.id);
+        const inSlot = slot?.item.id === item.id;
+        if (!inCallouts && !inSlot) return m;
+        return {
+          ...m,
+          data: {
+            ...m.data,
+            callouts: inCallouts ? m.data.callouts.map((c) => (c.id === item.id ? item : c)) : m.data.callouts,
+            slot: inSlot && slot ? { ...slot, item } : slot,
+          },
+        };
+      }),
+    );
+  };
+
+  // ── End-of-answer slot (R15–R18) ─────────────────────────────────────────
+
+  /** Adopt a SlotDTO (e.g. the quick-check response, or a local engagement update). */
+  updateSlot = (slot: SlotDTO) => this.patchSlot(slot.impressionId, () => slot);
+
+  private patchSlot(impressionId: string, fn: (slot: SlotDTO) => SlotDTO) {
+    this.setMessages((cur) =>
       cur.map((m) =>
-        m.kind === "answer" && m.data.callouts.some((c) => c.id === item.id)
-          ? { ...m, data: { callouts: m.data.callouts.map((c) => (c.id === item.id ? item : c)) } }
+        m.kind === "answer" && m.data.slot?.impressionId === impressionId
+          ? { ...m, data: { ...m.data, slot: fn(m.data.slot) } }
           : m,
       ),
     );
-  };
+  }
+
+  /** "Walk me through it" (B, R16): user bubble → framing card (answered via answerFraming). */
+  slotWalkthrough = (slot: Extract<SlotDTO, { variant: "walkthrough" }>) => this.runSlotStream(slot);
+
+  /** "Apply it to my project" (D, R18): user bubble → streamed answer. */
+  slotApply = (slot: Extract<SlotDTO, { variant: "apply" }>) => this.runSlotStream(slot);
+
+  /**
+   * Walk-through and apply: an optimistic user bubble with the exact text the
+   * server stores (walkthroughMessageText / applyMessageText), the slot marked
+   * engaged at once (its button becomes "Started below" / "Applied below"),
+   * then the stream is consumed like a chat send. When nothing was stored
+   * (failure/stop before any text) the server releases the action, so the
+   * bubble goes and the slot reverts — the user can click again.
+   */
+  private async runSlotStream(slot: StreamingSlot) {
+    if (this.busy || this.disposed) return;
+    const host = this.host();
+    const walk = slot.variant === "walkthrough";
+    const turn = host.beginTurn();
+    const controller = new AbortController();
+    this.abort = controller;
+
+    const userKey = localKey("user");
+    const userMsg: ChatMessage = {
+      id: userKey,
+      clientKey: userKey,
+      role: "user",
+      kind: "text",
+      content: walk ? walkthroughMessageText(slot.item.title) : applyMessageText(slot.item.title),
+      createdAt: new Date().toISOString(),
+      data: null,
+    };
+    const revert = () => {
+      this.set({ messages: this.state.messages.filter((m) => m.clientKey !== userKey) });
+      this.patchSlot(slot.impressionId, () => slot);
+    };
+    this.set({
+      error: null,
+      messages: [...this.state.messages, userMsg],
+      pendingKind: walk ? "walkthrough" : "apply",
+      pendingSince: Date.now(),
+      phase: "routing",
+      announcement: walk ? "Claude is writing a few questions to walk you through it…" : "Claude is applying this to your project…",
+    });
+    this.patchSlot(slot.impressionId, (s) => ({
+      ...s,
+      engagement: s.engagement ?? (walk ? "walkthrough_started" : "apply_clicked"),
+      engagedAt: s.engagedAt ?? new Date().toISOString(),
+    }));
+
+    try {
+      const url = walk ? API_ROUTES.slotWalkthrough(slot.impressionId) : API_ROUTES.slotApply(slot.impressionId);
+      const response = await postForStream(url, {}, controller.signal);
+      const result = await this.consume(response, controller.signal, turn, userKey);
+      if (result.outcome === "framing") {
+        const exchangeId = result.exchangeId ?? null;
+        this.patchSlot(slot.impressionId, (s) => (s.variant === "walkthrough" ? { ...s, exchangeId } : s));
+      } else if (result.outcome === "done") {
+        const applyMessageId = result.messageId ?? null;
+        this.patchSlot(slot.impressionId, (s) => (s.variant === "apply" ? { ...s, applyMessageId } : s));
+        this.set({ announcement: "Response complete." });
+      } else if (result.sawDelta) {
+        // Apply answer cut short: the partial text is kept (R3, R18).
+        this.settleInterrupted(result, {});
+      } else {
+        // Nothing stored: the server dropped the user message and released the action.
+        if (result.answerKey) this.setMessages((cur) => cur.filter((m) => m.clientKey !== result.answerKey));
+        revert();
+        if (result.outcome === "aborted") {
+          this.set({ announcement: "Stopped." });
+        } else {
+          const message = `${sentence(result.errorMessage ?? "Something went wrong")} Try again in a moment.`;
+          this.set({ error: { kind: "error", message }, announcement: message });
+        }
+        this.syncSoon(400);
+      }
+    } catch (err) {
+      revert();
+      if (isAbortError(err)) {
+        this.set({ announcement: "Stopped." });
+        this.syncSoon();
+      } else if (err instanceof ApiRequestError && err.status === 409) {
+        // Already used (another tab / double click): take the server's view.
+        this.set({ phase: "idle", announcement: "This was already started — showing the latest." });
+        await this.sync();
+      } else {
+        const rateLimited = err instanceof ApiRequestError && err.code === "rate_limited";
+        const message =
+          err instanceof ApiRequestError && err.status === 404
+            ? "This suggestion isn’t available any more — the conversation may have been reset."
+            : friendlyError(err);
+        this.set({ error: { kind: rateLimited ? "rate_limit" : "error", message }, announcement: message });
+      }
+    } finally {
+      if (this.abort === controller) this.abort = null;
+      this.set({ phase: "idle" });
+    }
+  }
 }

@@ -3,7 +3,9 @@ import "server-only";
 import { CONCEPTS_BY_SLUG } from "@/lib/concept-catalog";
 import { db, type Prisma, type User } from "@/lib/db";
 import { learnLaterItemInclude, toConceptDTO, toLearnLaterItemDTO, toLearningStyleDTO, toUserContextDTO } from "@/lib/dto";
+import { MAX_DISMISSED_LEARN_LATER } from "@/lib/learn-later-list";
 import { PERSONAS } from "@/lib/personas";
+import { stylePatchData } from "@/lib/style-patch";
 import { computeTier, progressToNextTier } from "@/lib/tiers";
 import type {
   ConceptDTO,
@@ -25,9 +27,11 @@ export async function getTierInputs(userId: string): Promise<TierInputs> {
 }
 
 const LEARN_LATER_STATUS_ORDER = { queued: 0, dug_in: 1, dismissed: 2 } as const;
+/** Dismissed items listed in the profile (the queue's "Dismissed" section), most recently dismissed first. */
+const MAX_DISMISSED = MAX_DISMISSED_LEARN_LATER;
 
 export async function getProfile(user: User): Promise<ProfileDTO> {
-  const [answeredFramingCount, masteries, style, context, items] = await Promise.all([
+  const [answeredFramingCount, masteries, style, context, items, dismissedItems] = await Promise.all([
     db.framingExchange.count({ where: { userId: user.id, status: "answered" } }),
     db.conceptMastery.findMany({ where: { userId: user.id }, include: { concept: true } }),
     db.learningStyle.findUnique({ where: { userId: user.id } }),
@@ -36,6 +40,13 @@ export async function getProfile(user: User): Promise<ProfileDTO> {
       where: { userId: user.id, status: { not: "dismissed" } },
       include: learnLaterItemInclude,
       orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+    }),
+    db.learnLaterItem.findMany({
+      where: { userId: user.id, status: "dismissed" },
+      include: learnLaterItemInclude,
+      // Status changes bump updatedAt, so this is "most recently dismissed first".
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+      take: MAX_DISMISSED,
     }),
   ]);
 
@@ -71,6 +82,7 @@ export async function getProfile(user: User): Promise<ProfileDTO> {
     learningStyle: style ? toLearningStyleDTO(style) : null,
     userContext,
     learnLater,
+    dismissedLearnLater: dismissedItems.map(toLearnLaterItemDTO),
     suggestedTopics: tier >= 2 ? suggestTopics(concepts, learnLater, userContext) : [],
     lastAssessedAt: user.lastAssessedAt ? user.lastAssessedAt.toISOString() : null,
   };
@@ -201,7 +213,9 @@ export class TierLockedError extends Error {
 
 /**
  * Tier 2 only (P6): apply user corrections. Edited style dimensions get
- * `*Overridden = true` and confidence 1 (the user told us); context edits set
+ * `*Overridden = true` and confidence 1 (the user told us);
+ * `resetLearningStyle` clears overrides and hands the dimension back to the
+ * assessor (see stylePatchData in src/lib/style-patch.ts); context edits set
  * `userEdited = true`. Returns the fresh ProfileDTO.
  */
 export async function patchProfile(user: User, patch: ProfilePatch): Promise<ProfileDTO> {
@@ -210,33 +224,20 @@ export async function patchProfile(user: User, patch: ProfilePatch): Promise<Pro
   const ops: Prisma.PrismaPromise<unknown>[] = [];
 
   const ls = patch.learningStyle;
-  if (ls && Object.keys(ls).length) {
-    const data: Prisma.LearningStyleUpdateInput = {};
-    if (ls.intuitionVsFormal !== undefined) {
-      Object.assign(data, {
-        intuitionVsFormal: ls.intuitionVsFormal,
-        intuitionVsFormalConfidence: 1,
-        intuitionVsFormalOverridden: true,
-      });
+  const resets = patch.resetLearningStyle ?? [];
+  if ((ls && Object.keys(ls).length) || resets.length) {
+    // Resets depend on the current row (only overridden dimensions change).
+    const current = resets.length ? await db.learningStyle.findUnique({ where: { userId: user.id } }) : null;
+    const data = stylePatchData(current, patch);
+    if (Object.keys(data).length) {
+      ops.push(
+        db.learningStyle.upsert({
+          where: { userId: user.id },
+          update: data,
+          create: { ...data, user: { connect: { id: user.id } } },
+        }),
+      );
     }
-    if (ls.entryPoint !== undefined) {
-      // Clearing the entry point (null) means "no preference": nothing to be confident about.
-      Object.assign(data, {
-        entryPoint: ls.entryPoint,
-        entryPointConfidence: ls.entryPoint === null ? 0 : 1,
-        entryPointOverridden: true,
-      });
-    }
-    if (ls.briefVsThorough !== undefined) {
-      Object.assign(data, { briefVsThorough: ls.briefVsThorough, briefVsThoroughConfidence: 1, briefVsThoroughOverridden: true });
-    }
-    ops.push(
-      db.learningStyle.upsert({
-        where: { userId: user.id },
-        update: data,
-        create: { ...(data as Prisma.LearningStyleCreateWithoutUserInput), user: { connect: { id: user.id } } },
-      }),
-    );
   }
 
   const uc = patch.userContext;

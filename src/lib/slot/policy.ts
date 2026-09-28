@@ -186,3 +186,45 @@ export function needsContent(variant: SlotVariant): variant is "walkthrough" | "
 export function parseSlotVariant(v: string | null | undefined): SlotVariant | null {
   return (SLOT_VARIANTS as readonly string[]).includes(v ?? "") ? (v as SlotVariant) : null;
 }
+
+// ─── Which item the slot describes (R13 reuse) ──────────────────────────────
+
+/** An already-queued Learn It Later item, as far as the slot needs it. */
+export interface ReusableItem {
+  id: string;
+  title: string;
+  preview: string;
+  appliedContext: string;
+  concept: { slug: string } | null;
+}
+
+/** The card the slot's content is written about (same shape as SlotItemPrompt). */
+export interface SlotContentItem {
+  title: string;
+  preview: string;
+  appliedContext: string;
+  conceptSlug: string | null;
+}
+
+/**
+ * The item the slot will actually show: when R13 will reuse an already-queued
+ * item for the featured callout, the slot shows (and saves) THAT item, so its
+ * content must be generated from the reused item's title / preview /
+ * appliedContext — not from the router's fresh callout.
+ */
+export function slotContentItem(callout: LearnLaterCallout, reused: ReusableItem | null): SlotContentItem {
+  if (reused) {
+    return {
+      title: reused.title,
+      preview: reused.preview,
+      appliedContext: reused.appliedContext,
+      conceptSlug: reused.concept?.slug ?? callout.conceptSlug ?? null,
+    };
+  }
+  return {
+    title: callout.title,
+    preview: callout.preview,
+    appliedContext: callout.appliedContext,
+    conceptSlug: callout.conceptSlug ?? null,
+  };
+}

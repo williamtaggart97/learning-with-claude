@@ -29,10 +29,10 @@ function neighbour(list: LearnLaterItemDTO[], index: number): string | null {
 }
 
 export function LearnLaterQueue() {
-  const { profile, dismissedItems } = useProfile();
+  const { profile } = useProfile();
   const queued = profile.learnLater.filter((i) => i.status === "queued");
   const dugIn = profile.learnLater.filter((i) => i.status === "dug_in");
-  const dismissed = dismissedItems.filter((d) => !profile.learnLater.some((i) => i.id === d.id));
+  const dismissed = profile.dismissedLearnLater;
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const primaries = useRef(new Map<string, HTMLButtonElement>());

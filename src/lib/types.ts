@@ -290,8 +290,14 @@ export interface ProfileDTO {
   concepts: ConceptDTO[];
   learningStyle: LearningStyleDTO | null;
   userContext: UserContextDTO | null;
-  /** Status "queued" first, newest first; dismissed items omitted. */
+  /** Status "queued" first, then "dug_in"; newest first within each. Dismissed items are NOT here. */
   learnLater: LearnLaterItemDTO[];
+  /**
+   * Dismissed items (status "dismissed"), most recently dismissed first,
+   * capped at 50 — the queue's "Dismissed" section with Restore. Kept apart
+   * from `learnLater` so counts/suggestions over the live queue don't change.
+   */
+  dismissedLearnLater: LearnLaterItemDTO[];
   /** Empty below Tier 2. */
   suggestedTopics: SuggestedTopic[];
   /**

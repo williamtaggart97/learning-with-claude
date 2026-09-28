@@ -1,6 +1,7 @@
 // Empty-state starter prompts (D2). A mix of concept questions (the router
-// usually frames these) and lookups (answered right away, with Learn It
-// Later callouts), so reviewers see both paths. Pure; server-safe.
+// usually frames these), lookups (answered right away) and a task (the work
+// product first, L8), so reviewers see all three router paths (L4). Lookups
+// and tasks end with the end-of-answer slot (L5). Pure; server-safe.
 import type { UserContextDTO } from "@/lib/types";
 
 export interface StarterPrompt {
@@ -8,7 +9,7 @@ export interface StarterPrompt {
   title: string;
   /** Message sent on click. */
   prompt: string;
-  kind: "concept" | "lookup";
+  kind: "concept" | "lookup" | "task";
 }
 
 const BASE: StarterPrompt[] = [
@@ -26,6 +27,11 @@ const BASE: StarterPrompt[] = [
     kind: "concept",
     title: "Ridge vs. lasso intuition",
     prompt: "What's the intuition for why lasso sets coefficients exactly to zero but ridge doesn't?",
+  },
+  {
+    kind: "task",
+    title: "Email my advisor about a model switch",
+    prompt: "Draft an email to my advisor explaining why I switched from Poisson to negative binomial regression.",
   },
   {
     kind: "lookup",
@@ -68,7 +74,7 @@ export function starterPromptsFor(context: UserContextDTO | null, max = 6): Star
   const haystack = context ? [context.field, ...context.projects, ...context.dataTypes, context.notes].join(" ") : "";
   const tailored = haystack ? TAILORED.filter((t) => t.match.test(haystack)).map((t) => t.prompt).slice(0, 1) : [];
   if (!tailored.length) return BASE.slice(0, max);
-  // Replace one generic concept prompt so the concept/lookup mix stays balanced.
+  // Replace one generic concept prompt so the concept/lookup/task mix stays balanced.
   const base = BASE.filter((p) => p.title !== "Ridge vs. lasso intuition");
   return [...tailored, ...base].slice(0, max);
 }

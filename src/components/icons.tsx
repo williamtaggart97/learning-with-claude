@@ -164,3 +164,23 @@ export const UndoIcon = (p: IconProps) => (
     <path d="M5 11.5h9a4.5 4.5 0 0 1 0 9h-2" />
   </Icon>
 );
+
+export const ListCheckIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 6h16M4 12h10M4 18h7" />
+    <path d="M16 16.5l2 2 3.5-4" />
+  </Icon>
+);
+
+export const ArrowDownIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 5v14M6 13l6 6 6-6" />
+  </Icon>
+);
+
+export const ChartIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4.5 19.5h15" />
+    <path d="M7.5 16v-5M12 16V7.5M16.5 16v-3" />
+  </Icon>
+);

@@ -20,20 +20,24 @@ export type LearnLaterItemWithConcept = Prisma.LearnLaterItemGetPayload<{
   include: { concept: { select: { slug: true } } };
 }>;
 
-/**
- * R13 upsert-by-rule. Reuses an existing `queued` item for the same
- * (userId, conceptId) — or, when the callout has no catalog concept, the same
- * normalized title — instead of creating a duplicate. conceptId is resolved
- * from callout.conceptSlug only when that slug is already in the catalog
- * (this function never creates Concepts). Returns the (existing or new) item.
- */
-export async function upsertLearnLaterItem(
-  input: UpsertLearnLaterInput,
-  tx: Tx = db,
-): Promise<{ item: LearnLaterItemWithConcept; created: boolean }> {
-  const { userId, callout } = input;
-  const include = { concept: { select: { slug: true } } } as const;
+const itemInclude = { concept: { select: { slug: true } } } as const;
 
+/** What the R13 lookup needs from the Prisma client (a fake works in tests). */
+export interface LearnLaterLookupStore {
+  concept: Pick<Tx["concept"], "findUnique">;
+  learnLaterItem: Pick<Tx["learnLaterItem"], "findFirst" | "findMany" | "findUnique">;
+}
+
+/**
+ * The R13 lookup shared by findReusableLearnLaterItem and the upsert:
+ * resolves the callout's catalog concept (never creates one) and the
+ * `queued` item that would be reused for it, if any.
+ */
+async function resolveReuse(
+  userId: string,
+  callout: Pick<LearnLaterCallout, "title" | "conceptSlug">,
+  tx: LearnLaterLookupStore,
+): Promise<{ conceptId: string | null; existing: LearnLaterItemWithConcept | null }> {
   const concept = callout.conceptSlug
     ? await tx.concept.findUnique({ where: { slug: callout.conceptSlug }, select: { id: true } })
     : null;
@@ -42,26 +46,53 @@ export async function upsertLearnLaterItem(
     const existing = await tx.learnLaterItem.findFirst({
       where: { userId, conceptId: concept.id, status: "queued" },
       orderBy: { createdAt: "desc" },
-      include,
+      include: itemInclude,
     });
-    if (existing) return { item: existing, created: false };
-  } else {
-    const key = normalizeLearnLaterTitle(callout.title);
-    const queued = await tx.learnLaterItem.findMany({
-      where: { userId, status: "queued", conceptId: null },
-      select: { id: true, title: true },
-    });
-    const match = queued.find((q) => normalizeLearnLaterTitle(q.title) === key);
-    if (match) {
-      const existing = await tx.learnLaterItem.findUnique({ where: { id: match.id }, include });
-      if (existing) return { item: existing, created: false };
-    }
+    return { conceptId: concept.id, existing };
   }
+  const key = normalizeLearnLaterTitle(callout.title);
+  const queued = await tx.learnLaterItem.findMany({
+    where: { userId, status: "queued", conceptId: null },
+    select: { id: true, title: true },
+  });
+  const match = queued.find((q) => normalizeLearnLaterTitle(q.title) === key);
+  const existing = match ? await tx.learnLaterItem.findUnique({ where: { id: match.id }, include: itemInclude }) : null;
+  return { conceptId: null, existing };
+}
+
+/**
+ * Read-only R13 lookup: the existing `queued` item upsertLearnLaterItem would
+ * reuse for this callout — same (userId, conceptId), or, when the callout has
+ * no catalog concept, the same normalized title — or null when a new item
+ * would be created. The end-of-answer slot uses it to describe the item that
+ * will actually be shown.
+ */
+export async function findReusableLearnLaterItem(
+  userId: string,
+  callout: Pick<LearnLaterCallout, "title" | "conceptSlug">,
+  tx: LearnLaterLookupStore = db,
+): Promise<LearnLaterItemWithConcept | null> {
+  return (await resolveReuse(userId, callout, tx)).existing;
+}
+
+/**
+ * R13 upsert-by-rule. Reuses the item findReusableLearnLaterItem finds instead
+ * of creating a duplicate. conceptId is resolved from callout.conceptSlug only
+ * when that slug is already in the catalog (this function never creates
+ * Concepts). Returns the (existing or new) item.
+ */
+export async function upsertLearnLaterItem(
+  input: UpsertLearnLaterInput,
+  tx: Tx = db,
+): Promise<{ item: LearnLaterItemWithConcept; created: boolean }> {
+  const { userId, callout } = input;
+  const { conceptId, existing } = await resolveReuse(userId, callout, tx);
+  if (existing) return { item: existing, created: false };
 
   const item = await tx.learnLaterItem.create({
     data: {
       userId,
-      conceptId: concept?.id ?? null,
+      conceptId,
       title: callout.title.trim(),
       preview: callout.preview.trim(),
       appliedContext: callout.appliedContext.trim(),
@@ -69,7 +100,7 @@ export async function upsertLearnLaterItem(
       sourceConversationId: input.sourceConversationId,
       sourceMessageId: input.sourceMessageId,
     },
-    include,
+    include: itemInclude,
   });
   return { item, created: true };
 }

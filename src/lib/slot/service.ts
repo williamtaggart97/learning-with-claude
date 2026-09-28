@@ -5,10 +5,10 @@ import { EXPERIMENT } from "@/config";
 import type { LearnerSnapshot, PromptTurn } from "@/lib/claude/prompts";
 import { generateSlotContent, type SlotContent } from "@/lib/claude/slot";
 import { db, Prisma, type SlotEngagement, type SlotVariant } from "@/lib/db";
-import { learnLaterItemToDTO, type LearnLaterItemWithConcept } from "@/lib/learn-later";
+import { findReusableLearnLaterItem, learnLaterItemToDTO, type LearnLaterItemWithConcept } from "@/lib/learn-later";
 import type { ImmediateAnswerMode, SlotCandidates } from "@/lib/pipeline/route-policy";
 import { QuickCheckResponseSchema, SlotPayloadSchema } from "@/lib/schemas";
-import { needsContent, parseSlotVariant, planSlot, type SlotPlan } from "@/lib/slot/policy";
+import { needsContent, parseSlotVariant, planSlot, slotContentItem, type SlotPlan } from "@/lib/slot/policy";
 import type { QuickCheckResultDTO, SlotDTO, Tier } from "@/lib/types";
 import type { z } from "zod";
 
@@ -38,11 +38,17 @@ export function devForcedVariant(request: Request): SlotVariant | null {
 
 export interface SlotRun {
   plan: SlotPlan;
+  /**
+   * The already-queued item (R13) the content was written about, resolved at
+   * draw time; null when the featured callout will create a new item.
+   */
+  contentItemId: string | null;
   /** Resolves to the generated payload, or null on failure. Never rejects. */
   content: Promise<SlotContent | null>;
 }
 
 export interface StartSlotInput {
+  userId: string;
   conversationId: string;
   candidates: SlotCandidates;
   learner: LearnerSnapshot;
@@ -92,11 +98,14 @@ async function drawSlot(input: StartSlotInput): Promise<SlotRun | null> {
   }
   const v = plan.variant;
   const { callout } = plan.featured;
+  // R13: if an already-queued item will be reused, the slot shows THAT item,
+  // so its copy must describe it (not the router's fresh callout).
+  const reused = await findReusableLearnLaterItem(input.userId, callout);
   const content = needsContent(v)
     ? generateSlotContent(
         v,
         {
-          item: { ...callout, conceptSlug: callout.conceptSlug ?? null },
+          item: slotContentItem(callout, reused),
           message: input.message,
           learner: input.learner,
           turns: input.turns,
@@ -107,7 +116,7 @@ async function drawSlot(input: StartSlotInput): Promise<SlotRun | null> {
         return null;
       })
     : Promise.resolve(null);
-  return { plan, content };
+  return { plan, contentItemId: reused?.id ?? null, content };
 }
 
 export interface ResolvedSlot {
@@ -143,10 +152,24 @@ export async function resolveSlotContent(run: SlotRun, waitMs: number = EXPERIME
   return { variant: EXPERIMENT.enabled.card ? "card" : "none", payload: null, fallbackReason: reason };
 }
 
+/**
+ * The variant payload was written about the item resolved at draw time. If
+ * the item actually saved differs (the queue changed while the answer
+ * streamed, e.g. the reused item was dismissed meanwhile), the copy would
+ * describe the wrong item: fall back to the card (E1), like a late payload.
+ * `shownReusedId`: the reused item's id, or null when a new item was created.
+ */
+export function reconcileSlotContent(run: Pick<SlotRun, "contentItemId">, resolved: ResolvedSlot, shownReusedId: string | null): ResolvedSlot {
+  if (!needsContent(resolved.variant) || run.contentItemId === shownReusedId) return resolved;
+  console.info(`[slot] ${resolved.variant} → card (item_changed)`);
+  return { variant: EXPERIMENT.enabled.card ? "card" : "none", payload: null, fallbackReason: "item_changed" };
+}
+
 // ─── Persist ────────────────────────────────────────────────────────────────
 
 export interface CreateImpressionInput {
   run: SlotRun;
+  /** Already reconciled with the saved item (reconcileSlotContent). */
   resolved: ResolvedSlot;
   userId: string;
   conversationId: string;
@@ -156,6 +179,8 @@ export interface CreateImpressionInput {
   answerMode: ImmediateAnswerMode;
   /** The featured item, already upserted (E3). */
   item: LearnLaterItemWithConcept;
+  /** False when the upsert created `item`; true when R13 reused a queued one. */
+  reusedItem: boolean;
 }
 
 /**
@@ -166,7 +191,8 @@ export interface CreateImpressionInput {
 export async function createSlotImpression(tx: Tx, input: CreateImpressionInput): Promise<SlotDTO> {
   const { plan } = input.run;
   const { featured } = plan;
-  const slug = featured.callout.conceptSlug ?? null;
+  const { resolved } = input;
+  const slug = input.item.concept?.slug ?? featured.callout.conceptSlug ?? null;
   const mastery = slug
     ? await tx.conceptMastery.findFirst({ where: { userId: input.userId, concept: { slug } }, select: { score: true } })
     : null;
@@ -182,21 +208,22 @@ export async function createSlotImpression(tx: Tx, input: CreateImpressionInput)
       conversationRefId: input.conversationId,
       messageRefId: input.messageId,
       learnLaterItemRefId: input.item.id,
-      featuredTitle: featured.callout.title,
+      featuredTitle: input.item.title,
       featuredConceptSlug: slug,
+      reusedItem: input.reusedItem,
       featuredMasteryAtImpression: mastery?.score ?? null,
       candidates: candidateSnapshot(plan),
       candidateCount: featured.candidateCount,
       featuredRank: featured.rank,
       featuredIsWhy: featured.isWhy,
       topPickProbability: plan.topPickProbability,
-      variant: input.resolved.variant,
+      variant: resolved.variant,
       drawnVariant: plan.variant,
-      fallbackReason: input.resolved.fallbackReason,
+      fallbackReason: resolved.fallbackReason,
       eligibleVariants: plan.eligible,
       weights: plan.weights,
       forced: plan.forced,
-      payload: input.resolved.payload ? (input.resolved.payload as Prisma.InputJsonValue) : Prisma.DbNull,
+      payload: resolved.payload ? (resolved.payload as Prisma.InputJsonValue) : Prisma.DbNull,
     },
   });
   const dto = toSlotDTO(row, input.item);

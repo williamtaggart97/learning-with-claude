@@ -5,6 +5,7 @@
 //   `/`       → <NewChatView>       (the current new-chat session)
 //   `/c/[id]` → <ConversationView>  (the live session for id, or one from the DTO)
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { DevSlotBadge } from "@/components/slot/dev-slot-badge";
 import { claimKickoff } from "@/lib/client/kickoff-guard";
 import type { ConversationDTO } from "@/lib/types";
 import type { ChatSession, InlineError } from "./chat-session";
@@ -105,9 +106,12 @@ function ChatView({
   );
 
   const liveRegion = (
-    <div className="sr-only" role="status" aria-live="polite">
-      {state.announcement}
-    </div>
+    <>
+      <div className="sr-only" role="status" aria-live="polite">
+        {state.announcement}
+      </div>
+      <DevSlotBadge />
+    </>
   );
 
   if (messages.length === 0 && !busy && !kickoffMessage) {
@@ -150,6 +154,15 @@ function ChatView({
                 onAnswerFraming={session.answerFraming}
                 onItemUpdated={session.updateCallout}
                 onConflict={session.sync}
+                onSlotUpdated={session.updateSlot}
+                onWalkthrough={(slot) => {
+                  stickToBottom.current = true;
+                  void session.slotWalkthrough(slot);
+                }}
+                onApply={(slot) => {
+                  stickToBottom.current = true;
+                  void session.slotApply(slot);
+                }}
               />
             );
           })}
