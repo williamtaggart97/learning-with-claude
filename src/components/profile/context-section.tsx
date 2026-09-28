@@ -96,7 +96,7 @@ function FieldRow({ value, editable }: { value: string | null; editable: boolean
                   setEditing(false);
                 }
               }}
-              placeholder="e.g. MPH epidemiology"
+              placeholder="e.g. Nursing student, UX designer, junior accountant"
               className="w-full rounded-lg border border-learn-200 bg-surface px-2.5 py-1.5 text-sm text-ink outline-none focus:border-learn-500 focus:ring-2 focus:ring-learn-100"
             />
             <InlineError message={error} />

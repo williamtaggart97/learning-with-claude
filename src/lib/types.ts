@@ -152,7 +152,7 @@ export interface TierProgress {
 export interface PersonaSummary {
   key: PersonaKey;
   displayName: string;
-  /** One line for the switcher, e.g. "MPH epidemiology · Tier 2". */
+  /** One line for the switcher, e.g. "Junior marketer · email & paid social · profile unlocked". */
   tagline: string;
 }
 

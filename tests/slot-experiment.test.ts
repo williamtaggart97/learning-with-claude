@@ -248,6 +248,48 @@ test("reportsProblem heuristic", () => {
     assert.ok(!reportsProblem(m), m);
 });
 
+test("reportsProblem heuristic: problem reports outside data science", () => {
+  for (const m of [
+    "my open rate dropped from 40% to 22% last week",
+    "the numbers don't match between GA4 and Meta",
+    "revenue in my report doesn't add up to the Shopify total",
+    "there's a big discrepancy between Klaviyo and GA4 conversions",
+    "CPC spiked after I changed the audience",
+    "click-through is way lower than usual on this campaign",
+    "my welcome emails are going to spam",
+    "conversions aren't tracking since we moved the checkout",
+  ])
+    assert.ok(reportsProblem(m), m);
+  for (const m of [
+    "Write subject lines for our spring sale email",
+    "Draft a campaign brief for the Meta retargeting test",
+    "Draft an email explaining that we dropped the Poisson model",
+    "Summarize last month's campaign performance for my manager",
+  ])
+    assert.ok(!reportsProblem(m), m);
+});
+
+test("reportsProblem heuristic: a request to WRITE something is never a problem report", () => {
+  for (const m of [
+    "Draft an email explaining why our open rate dropped",
+    "Write a summary for my manager: CPC spiked in March and conversions fell",
+    "Write the report section explaining the discrepancy between GA4 and Meta",
+    "Help me write a Slack message explaining why the email didn't send",
+    "Draft a reply to the client about why their numbers are lower than expected",
+    "Write copy for a flash sale where prices dropped 50%",
+    "Can you draft a note to IT that the export keeps failing?",
+    "I need an email to my advisor about the convergence warnings",
+  ])
+    assert.ok(!reportsProblem(m), m);
+  for (const m of [
+    "Fix this error: KeyError 'region'",
+    "Can you debug this? my loop crashes on the last row",
+    "help me fix this merge, the row counts don't match",
+    "my open rate dropped after we changed the sender name",
+  ])
+    assert.ok(reportsProblem(m), m);
+});
+
 test("router keeps up to 3 ranked candidates", () => {
   const r = normalizeRouterOutput({
     kind: "lookup",

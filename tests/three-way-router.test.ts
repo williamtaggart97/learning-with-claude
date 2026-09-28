@@ -86,9 +86,9 @@ test("concept with unusable framing degrades to task for a deliverable, else loo
 });
 
 test("deliverable heuristic", () => {
-  for (const m of ["Write a function that bins ages", "Can you draft an email to my advisor?", "help me fix this merge", "I need a paragraph for my methods section"])
+  for (const m of ["Write a function that bins ages", "Can you draft an email to my advisor?", "help me fix this merge", "I need a paragraph for my methods section", "I need a subject line for the spring sale email", "Can you polish my cover letter?", "I need a creative brief for the spring launch", "I need a formula that flags duplicate emails"])
     assert.ok(asksForDeliverable(m), m);
-  for (const m of ["What does a p-value mean?", "Why do we divide by n-1? My draft is due tomorrow.", "Which test should I use?"])
+  for (const m of ["What does a p-value mean?", "Why do we divide by n-1? My draft is due tomorrow.", "Which test should I use?", "I need a brief explanation of p-values", "I need the formula for standard deviation"])
     assert.ok(!asksForDeliverable(m), m);
 });
 
@@ -216,6 +216,19 @@ test("deadline detection", () => {
     "tomorrow's presentation needs this slide",
     "I'm really short on time here",
     "sorry, in a rush",
+    "the campaign goes out tomorrow",
+    "the landing page is going live on Friday",
+    "I have a client pitch tomorrow",
+    "my exam is in 2 days",
+    "campaign launches tomorrow",
+    "we go live tomorrow",
+    "the campaign goes out in 2 hours",
+    "my exam is on Friday",
+    "the pitch is on Thursday",
+    "my final is tomorrow",
+    "quiz tomorrow",
+    "I have a midterm tonight",
+    "our demo is in 3 hours",
   ]) assert.ok(mentionsDeadline(m), m);
   for (const m of [
     "Why do we divide by n-1?",
@@ -231,6 +244,14 @@ test("deadline detection", () => {
     "is the effect due at least partly to confounding?",
     "cortisol levels peak in 2 hours after dosing",
     "the meeting variable is coded 0/1",
+    "open rates by day of week",
+    "sales went up after the launch",
+    "which demographic segments convert best?",
+    "Why do sales drop the day after a launch? We saw it after the launch today",
+    "what makes a good demo? the demo I saw today was bad",
+    "Why do exam scores regress to the mean? The exam results came back today",
+    "Why is the learning phase longer when an ad goes live on Friday?",
+    "should the final model include the interaction term?",
   ]) assert.ok(!mentionsDeadline(m), m);
 });
 

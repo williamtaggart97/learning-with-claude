@@ -15,8 +15,25 @@ const HARD_TIME = String.raw`(?:tomorrow|tonight|today|noon|midnight|\d{1,2}(?::
 const SOFT_TIME = String.raw`(?:(?:the\s+)?(?:${WEEKDAY_FULL}|weekend|morning|afternoon|evening)|(?:the\s+)?end\s+of\s+(?:the\s+)?(?:day|week|month))`;
 /** Verbs that turn a soft "by <time>" into a deadline ("need it by Friday", "done by end of day"). */
 const NEED_VERB = String.raw`(?:need(?:s|ed)?|due|submit(?:ted|ting)?|finish(?:ed)?|send|sent|done|ready|complete(?:d)?|turn(?:ed)?\s+in|hand(?:ed)?\s+in|have\s+to|has\s+to|must)`;
-const EVENT_NOUN = String.raw`(?:meeting|defen[cs]e|presentation|deadline)`;
+/** Events that are almost always a deadline when paired with a day word, even "today". */
+const EVENT_NOUN = String.raw`(?:meeting|defen[cs]e|presentation|deadline|interview)`;
+/**
+ * Events that also appear in data or concept phrasing ("sales after the launch
+ * today", "the exam results came back today"): a deadline only with an
+ * upcoming time (tomorrow / tonight / in N hours) or a copula ("my exam is on
+ * Friday").
+ */
+const SOON_EVENT_NOUN = String.raw`(?:exams?|pitch(?:es)?|demos?|launch(?:es)?|quiz(?:zes)?|midterms?|finals)`;
+/** Copula-only events ("my final is tomorrow", but not "the final model tomorrow"). */
+const COPULA_EVENT_NOUN = String.raw`(?:${SOON_EVENT_NOUN}|${EVENT_NOUN}s?|final)`;
 const DAY_WORD = String.raw`(?:tomorrow|today|tonight)`;
+/** Unambiguously upcoming: tomorrow, tonight, in N hours. */
+const SOON = String.raw`(?:tomorrow|tonight|in\s+${SMALL_COUNT}\s+(?:hours?|hrs?))`;
+/** When a named thing is scheduled: a day word, a weekday, or in N hours/days. */
+const WHEN = String.raw`(?:${DAY_WORD}|in\s+${SMALL_COUNT}\s+(?:hours?|hrs?|days?)|(?:on\s+|this\s+|next\s+)?${WEEKDAY_FULL})`;
+/** A definite subject ("we", "the landing page", "our campaign") — not "an ad". */
+const SUBJECT = String.raw`(?:we|they|it|(?:my|our|the|this|your)(?:\s+[\w-]+){1,3}?)`;
+const GO_OUT = String.raw`(?:go(?:es|ing)?\s+(?:out|live)|launch(?:es|ing)?)`;
 
 /**
  * Deadline language (L4: a message that mentions a deadline is never framed).
@@ -45,6 +62,15 @@ const DEADLINE_RE = new RegExp(
     // committee meeting tomorrow / tomorrow's defense
     String.raw`\b${EVENT_NOUN}s?\b[^.?!\n]{0,30}?\b${DAY_WORD}\b`,
     String.raw`\b${DAY_WORD}['’]s\s+(?:\w+\s+)?${EVENT_NOUN}\b`,
+    // client pitch tomorrow / quiz tomorrow / demo in 2 hours (never with "today")
+    String.raw`\b${SOON_EVENT_NOUN}\b[^.?!\n]{0,30}?\b${SOON}\b`,
+    String.raw`\b(?:tomorrow|tonight)['’]s\s+(?:\w+\s+)?(?:${SOON_EVENT_NOUN}|final)\b`,
+    // my exam is on Friday / the pitch is on Thursday / my final is tomorrow
+    String.raw`\b(?:my|our|the)\s+(?:[\w-]+\s+)?${COPULA_EVENT_NOUN}\s+(?:is|are|['’]s)\s+${WHEN}\b`,
+    // the campaign goes out tomorrow / the landing page is going live on Friday / we go live tomorrow
+    String.raw`\b${SUBJECT}(?:\s+(?:is|are)|['’](?:s|re))?\s+${GO_OUT}\s+${WHEN}\b`,
+    // campaign launches tomorrow / goes out in 2 hours (no subject needed when it's that soon)
+    String.raw`\b${GO_OUT}\s+${SOON}\b`,
   ].join("|"),
   "i",
 );
@@ -61,9 +87,11 @@ export function mentionsDeadline(message: string): boolean {
 const DELIVERABLE_RE = new RegExp(
   [
     // Imperative or polite request: "write…", "can you draft…", "help me fix…"
-    String.raw`(?:^|[.!?]\s+|\b(?:can|could|would|will)\s+you\s+|\bplease\s+|\bhelp\s+me\s+(?:to\s+)?|\bi\s+need\s+(?:you\s+)?to\s+)(?:write|draft|rewrite|edit|proofread|code|implement|fix|debug|refactor|translate|convert|port|reshape|clean|recode|merge|plot|generate|create|make|build|produce|summari[sz]e)\b`,
-    // "I need a function/paragraph/email …"
-    String.raw`\bi\s+need\s+(?:a|an|the|some)\s+(?:\w+\s+)?(?:function|script|code|snippet|query|plot|figure|paragraph|sentence|email|abstract|draft|summary|response|reply|table)\b`,
+    String.raw`(?:^|[.!?]\s+|\b(?:can|could|would|will)\s+you\s+|\bplease\s+|\bhelp\s+me\s+(?:to\s+)?|\bi\s+need\s+(?:you\s+)?to\s+)(?:write|draft|rewrite|edit|proofread|polish|shorten|outline|code|implement|fix|debug|refactor|translate|convert|port|reshape|clean|recode|merge|plot|generate|create|make|build|produce|summari[sz]e)\b`,
+    // "I need a function/paragraph/email/subject line …"
+    String.raw`\bi\s+need\s+(?:a|an|the|some)\s+(?:\w+\s+)?(?:function|script|code|snippet|query|plot|figure|chart|paragraph|sentence|email|abstract|draft|summary|response|reply|table|subject\s+lines?|headlines?|post|caption|slide|deck|memo|report|(?:creative|campaign)\s+brief|outline)\b`,
+    // "I need a formula that/to …" (not "the formula for X", which is a lookup)
+    String.raw`\bi\s+need\s+(?:a|an)\s+(?:\w+\s+)?formula\s+(?:that|to|which)\b`,
   ].join("|"),
   "i",
 );
@@ -84,8 +112,10 @@ const PROBLEM_RE = new RegExp(
   [
     // errors, warnings, failures
     String.raw`\b(?:errors?|exceptions?|traceback|stack\s*trace|warnings?|fails?|failed|failing|failure|crash(?:es|ed|ing)?|bugs?|buggy|broke|broken|breaks)\b`,
-    String.raw`\b(?:does\s*not|doesn['’]?t|do\s+not|don['’]?t|did\s+not|didn['’]?t|is\s+not|isn['’]?t|won['’]?t|can['’]?t|cannot|never)\s+(?:work|run|converge|fit|compile|match|load|finish)\b`,
-    String.raw`\bnot\s+(?:working|converging|running|matching|fitting)\b`,
+    String.raw`\b(?:does\s*not|doesn['’]?t|do\s+not|don['’]?t|did\s+not|didn['’]?t|is\s+not|isn['’]?t|are\s+not|aren['’]?t|won['’]?t|can['’]?t|cannot|never)\s+(?:work|run|converge|fit|compile|match|load|finish|add\s+up|line\s+up|tie\s+out|reconcile|send|deliver|track|show\s+up)\b`,
+    String.raw`\b(?:not|\w+n['’]t)\s+(?:working|converging|running|matching|fitting|adding\s+up|lining\s+up|sending|delivering|tracking|showing\s+up)\b`,
+    // numbers that disagree across tools/reports ("GA4 and Meta show different numbers")
+    String.raw`\b(?:discrepanc(?:y|ies)|mismatch(?:es|ed)?)\b`,
     // something looks wrong
     String.raw`\b(?:wrong|weird|strange|odd|unexpected(?:ly)?|surprising(?:ly)?|suspicious(?:ly)?|incorrect|impossible|nonsensical|garbage)\b`,
     String.raw`\btoo\s+(?:good|high|low|big|small|large|perfect)\b`,
@@ -96,6 +126,11 @@ const PROBLEM_RE = new RegExp(
     // separation, multicollinearity, convergence, null values) are NOT here:
     // "write a convergence check" or "handle null values" is a plain request.
     String.raw`\b(?:singular(?:ity)?|diverg(?:ent|ence|ences|es|ing)|overfit(?:s|ted|ting)?|flipped|flips|reversed|drops?\s+(?:to|when|on)|tank(?:s|ed)?|falls?\s+apart)\b`,
+    // a metric that moved sharply ("my open rate dropped", "CPC spiked", "lower than expected");
+    // not "we dropped the outliers" (a choice they made, not a symptom)
+    String.raw`(?<!\b(?:i|we|they|you)\s+)\b(?:dropped|dipped|plummet(?:s|ed|ing)?|plunged|cratered|spiked|nosedived)\b`,
+    String.raw`\b(?:lower|higher|worse)\s+than\s+(?:expected|usual|normal|last\s+(?:week|month|year|time))\b`,
+    String.raw`\b(?:going|landing|ending\s+up|went|landed)\s+(?:to|in)\s+spam\b`,
     String.raw`\bperfect(?:ly)?\s+separat(?:ion|ed)\b`,
     // "why is my …", "what's wrong", "keeps giving …", "I'm getting …"
     String.raw`\bwhy\s+(?:is|are|does|do|did|would|has|have)\s+(?:my|the|this|these|it)\b`,
@@ -106,7 +141,31 @@ const PROBLEM_RE = new RegExp(
   "i",
 );
 
+/**
+ * A request to WRITE something (prose, a summary, a translation): it leads
+ * with a writing verb, optionally after "can you" / "please" / "help me", or
+ * asks for a piece of prose ("I need an email …"). It never counts as a
+ * problem report, even when what's to be written describes one ("Draft an
+ * email explaining why our open rate dropped"). Fix/debug requests are not
+ * writing requests.
+ */
+const WRITING_VERB = String.raw`(?:write|draft|re-?write|edit|proofread|polish|shorten|outline|summari[sz]e|translate)`;
+const PROSE_NOUN = String.raw`(?:e-?mail|message|reply|response|paragraph|sentence|summary|abstract|post|caption|memo|report|letter|note|update|announcement|copy|blurb|bio|outline|draft|section)`;
+const WRITING_REQUEST_RE = new RegExp(
+  [
+    String.raw`^(?:(?:hi|hey|ok(?:ay)?|so)[,!]?\s+)?(?:(?:(?:can|could|would|will)\s+you|please|help\s+me(?:\s+to)?|i\s+(?:need|want)\s+(?:you\s+)?to),?\s+)*${WRITING_VERB}\b`,
+    String.raw`\bhelp\s+me\s+(?:to\s+)?${WRITING_VERB}\b`,
+    String.raw`^i\s+need\s+(?:a|an)\s+(?:[\w-]+\s+){0,2}?${PROSE_NOUN}\b`,
+  ].join("|"),
+  "i",
+);
+
+export function isWritingRequest(message: string): boolean {
+  return WRITING_REQUEST_RE.test(message.trim());
+}
+
 export function reportsProblem(message: string): boolean {
+  if (isWritingRequest(message)) return false;
   return PROBLEM_RE.test(message);
 }
 

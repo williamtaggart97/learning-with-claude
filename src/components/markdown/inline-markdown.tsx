@@ -1,13 +1,14 @@
 "use client";
 // Inline-only markdown for short strings (framing prompts/options): emphasis,
-// inline code and $math$, no blocks. Router output sometimes uses *these*.
+// inline code and $$math$$, no blocks. Router output sometimes uses *these*.
 import { memo } from "react";
 import ReactMarkdown, { type Options } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkMath from "remark-math";
-import { normalizeMathDelimiters } from "./prepare";
+import { normalizeMathDelimiters, REMARK_MATH_OPTIONS } from "./prepare";
 
-const remarkPlugins: Options["remarkPlugins"] = [remarkMath];
+// Single "$" stays literal (currency); inline math is $$ … $$ (see prepare.ts).
+const remarkPlugins: Options["remarkPlugins"] = [[remarkMath, REMARK_MATH_OPTIONS]];
 const rehypePlugins: Options["rehypePlugins"] = [[rehypeKatex, { throwOnError: false, strict: "ignore" }]];
 /** Block-level markdown is flattened to its text (unwrapDisallowed); paragraphs are joined with a space. */
 const blocks = ["h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "pre", "table", "hr", "img", "a"];
