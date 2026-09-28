@@ -5,12 +5,16 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
+    "build:vercel": "npm run build && npm run db:deploy:vercel",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate",
     "typecheck": "next typegen && tsc --noEmit",
+    "test": "node --conditions=react-server --import tsx --test \"tests/*.test.ts\"",
+    "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:deploy:vercel": "node -e \"const e=process.env;if(e.VERCEL_ENV!=='production'){console.log('[db:deploy:vercel] VERCEL_ENV='+(e.VERCEL_ENV||'unset')+': skipping prisma migrate deploy (production only)');process.exit(0)}if(!e.DIRECT_URL){console.error('[db:deploy:vercel] DIRECT_URL (Neon unpooled URL) is required to migrate in production');process.exit(1)}require('child_process').execSync('prisma migrate deploy',{stdio:'inherit'})\"",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio"
   },
