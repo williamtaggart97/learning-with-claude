@@ -100,7 +100,7 @@ export function AppShell({
           >
             Skip to chat
           </a>
-          <div className="flex h-dvh w-full overflow-clip">
+          <div className="relative flex h-dvh w-full overflow-clip">
             <Sidebar />
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="shrink-0" inert={backgroundInert}>

@@ -116,7 +116,7 @@ function ChatView({
 
   if (messages.length === 0 && !busy && !kickoffMessage) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
         {liveRegion}
         <EmptyState name={greetingName} starters={starters} composer={composer} onPick={submit} disabled={busy} />
         {error && (
@@ -131,7 +131,7 @@ function ChatView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {liveRegion}
-      <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+      <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <div className={`${COLUMN} space-y-7 pt-6 pb-10 sm:pt-10`}>
           {messages.map((m, i) => {
             const next = messages[i + 1];
