@@ -102,7 +102,7 @@ function ConversationList() {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+    <div className="relative min-h-0 flex-1 overflow-y-auto px-3 pb-3">
       <h2 className="px-2.5 pt-3 pb-1.5 text-xs font-medium text-ink-muted">Recents</h2>
       {conversations.length === 0 ? (
         <p className="px-2.5 py-2 text-sm text-ink-muted">Your chats will show up here.</p>

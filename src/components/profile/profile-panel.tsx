@@ -47,7 +47,7 @@ export function ProfilePanel() {
             <CloseIcon className="size-4" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="relative min-h-0 flex-1 overflow-y-auto">
           <ProfilePanelContent />
         </div>
       </aside>
