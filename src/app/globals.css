@@ -1,0 +1,486 @@
+@import "tailwindcss";
+
+/*
+ * Visual foundation (V1, V2). Light, Claude-evoking: cream paper, warm ink,
+ * serif display, coral accent. The "learning" palette (deep teal) is reserved
+ * for Learning-mode features — framing cards, Learn It Later chips, the
+ * profile panel — so reviewers can see what's new at a glance.
+ *
+ * Contrast (WCAG AA, 4.5:1 for body text), measured:
+ *   ink-muted  on cream 5.30, surface-muted 4.85
+ *   ink-faint  on cream 4.62, surface 4.95 — on surface-muted only 4.23, so
+ *              use ink-muted for text there
+ *   white on accent-strong 4.87, on accent-strong-hover 6.17
+ *   white on accent (#d97757) is only 3.12: never put text on bg-accent;
+ *   it is for focus rings, borders, icons and large decorative fills.
+ *
+ * Usage (Tailwind v4 utilities are generated from @theme):
+ *   bg-cream  bg-surface  bg-surface-muted  border-line
+ *   text-ink  text-ink-muted  text-ink-faint
+ *   bg-accent  hover:bg-accent-hover  bg-accent-soft  text-accent
+ *   bg-accent-strong  hover:bg-accent-strong-hover   (filled buttons w/ white text)
+ *   bg-learn-50 … bg-learn-900, text-learn-700, border-learn-200, ring-learn-500
+ *   font-serif (display)  font-sans (body)  font-mono (code)
+ */
+
+@theme {
+  /* Base: cream paper */
+  --color-cream: #f5f1e8;
+  --color-surface: #fbf9f4; /* cards, composer, raised panels */
+  --color-surface-muted: #ede7da; /* sidebar, hover fills */
+  --color-line: #e2dacb; /* hairline borders */
+  --color-line-strong: #cfc5b2;
+
+  /* Warm ink */
+  --color-ink: #2b2621;
+  --color-ink-muted: #6b6258;
+  --color-ink-faint: #756b60; /* ≥4.5:1 on cream/surface (see contrast notes) */
+
+  /* Coral accent (primary actions, focus) */
+  --color-accent: #d97757;
+  --color-accent-hover: #c4633f;
+  --color-accent-soft: #f6e1d6;
+  --color-accent-strong: #b8532f; /* filled buttons: white text 4.87:1 */
+  --color-accent-strong-hover: #a3441f; /* white text 6.17:1 */
+  --color-accent-ink: #8a3f24; /* coral text on light backgrounds */
+
+  /* Learning palette — deep teal, distinct from the coral chrome */
+  --color-learn-50: #eef6f4;
+  --color-learn-100: #d8ebe6;
+  --color-learn-200: #b2d6cd;
+  --color-learn-300: #85bcaf;
+  --color-learn-400: #569d8f;
+  --color-learn-500: #3a8175;
+  --color-learn-600: #2d675e;
+  --color-learn-700: #24534c;
+  --color-learn-800: #1c3f3a;
+  --color-learn-900: #132b28;
+
+  /* Learning highlight (unlock celebration, "new" badges) — warm gold */
+  --color-spark: #e0a93b;
+  --color-spark-soft: #f8ecd0;
+  --color-spark-ink: #6e4a08; /* gold text/icons on spark-soft or cream */
+
+  /* Mastery scale, low → high (profile concept bars) */
+  --color-mastery-low: #d98a6b;
+  --color-mastery-mid: #d9b45a;
+  --color-mastery-high: #3a8175;
+
+  /* Status */
+  --color-danger: #b4432f;
+
+  /* Type — font variables come from next/font in layout.tsx */
+  --font-serif: var(--font-source-serif), ui-serif, Georgia, serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --radius-card: 1rem;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+/*
+ * ── Phase 3: chat UI ─────────────────────────────────────────────────────────
+ * Syntax colors for highlighted code (rehype-highlight / highlight.js class
+ * names). Warm, low-saturation, all ≥4.5:1 on --color-code-bg.
+ */
+@theme {
+  --color-code-bg: #f3eee3;
+  --color-code-ink: #2b2621;
+  --color-code-comment: #756b60;
+  --color-code-keyword: #8a3f24; /* = accent-ink */
+  --color-code-string: #24534c; /* = learn-700 */
+  --color-code-number: #7a4f0c;
+  --color-code-title: #4a4390;
+  --color-code-attr: #6b3d6e;
+
+  --animate-fade-in: fade-in 220ms ease-out both;
+  --animate-rise-in: rise-in 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  ::backdrop {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Pending "thinking" dots (transcript) */
+@keyframes lm-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+.lm-dots > span {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: lm-dot 1.2s ease-in-out infinite;
+}
+.lm-dots > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.lm-dots > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* Soft shimmer for pending text */
+@keyframes lm-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+.lm-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-learn-700) 0%,
+    var(--color-learn-700) 40%,
+    var(--color-learn-400) 50%,
+    var(--color-learn-700) 60%,
+    var(--color-learn-700) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: lm-shimmer 2.4s linear infinite;
+}
+
+/* Streaming caret */
+@keyframes lm-caret {
+  50% {
+    opacity: 0;
+  }
+}
+/* After the last text block; inside a trailing blockquote, after its last paragraph (not on a new line). */
+.lm-streaming > :last-child:not(.lm-code):not(.lm-table-wrap):not(ul):not(ol):not(blockquote)::after,
+.lm-streaming > blockquote:last-child > :last-child:not(.lm-code):not(ul):not(ol)::after,
+.lm-caret::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  border-radius: 2px;
+  background: var(--color-accent);
+  animation: lm-caret 1s steps(1) infinite;
+}
+
+/* ── Markdown prose (assistant messages) ─────────────────────────────────── */
+.lm-prose {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.lm-prose > :first-child {
+  margin-top: 0;
+}
+.lm-prose > :last-child {
+  margin-bottom: 0;
+}
+.lm-prose p,
+.lm-prose ul,
+.lm-prose ol,
+.lm-prose blockquote,
+.lm-prose table,
+.lm-prose .lm-code,
+.lm-prose .katex-display {
+  margin: 0.85em 0;
+}
+.lm-prose h1,
+.lm-prose h2,
+.lm-prose h3,
+.lm-prose h4 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 1.4em 0 0.5em;
+}
+.lm-prose h1 {
+  font-size: 1.5rem;
+}
+.lm-prose h2 {
+  font-size: 1.3rem;
+}
+.lm-prose h3 {
+  font-size: 1.12rem;
+}
+.lm-prose h4 {
+  font-size: 1rem;
+}
+.lm-prose ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.lm-prose ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.lm-prose li {
+  margin: 0.3em 0;
+}
+.lm-prose li > ul,
+.lm-prose li > ol {
+  margin: 0.3em 0;
+}
+.lm-prose li::marker {
+  color: var(--color-ink-faint);
+}
+.lm-prose a {
+  color: var(--color-accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lm-prose strong {
+  font-weight: 600;
+}
+.lm-prose em {
+  font-style: italic;
+}
+.lm-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  margin: 1.6em 0;
+}
+.lm-prose blockquote {
+  border-left: 3px solid var(--color-line-strong);
+  padding-left: 1em;
+  color: var(--color-ink-muted);
+}
+.lm-prose :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-line);
+  border-radius: 0.35rem;
+  padding: 0.1em 0.35em;
+}
+.lm-prose .lm-table-wrap {
+  overflow-x: auto;
+  margin: 1em 0;
+  border: 1px solid var(--color-line);
+  border-radius: 0.75rem;
+  background: var(--color-surface);
+}
+.lm-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+  margin: 0;
+}
+.lm-prose th,
+.lm-prose td {
+  padding: 0.5em 0.85em;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-line);
+}
+.lm-prose th {
+  font-weight: 600;
+  background: var(--color-surface-muted);
+  color: var(--color-ink);
+}
+.lm-prose tr:last-child td {
+  border-bottom: 0;
+}
+.lm-prose tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--color-surface-muted) 35%, transparent);
+}
+.lm-prose .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}
+.lm-prose .katex {
+  font-size: 1.08em;
+}
+.lm-prose input[type="checkbox"] {
+  margin-right: 0.4em;
+  accent-color: var(--color-accent-strong);
+}
+
+/* highlight.js token classes */
+.hljs-comment,
+.hljs-quote {
+  color: var(--color-code-comment);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-meta .hljs-keyword,
+.hljs-literal {
+  color: var(--color-code-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-symbol {
+  color: var(--color-code-string);
+}
+.hljs-number,
+.hljs-bullet,
+.hljs-variable,
+.hljs-template-variable {
+  color: var(--color-code-number);
+}
+.hljs-title,
+.hljs-section,
+.hljs-function .hljs-title,
+.hljs-title.function_,
+.hljs-title.class_ {
+  color: var(--color-code-title);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-params,
+.hljs-type,
+.hljs-meta,
+.hljs-name {
+  color: var(--color-code-attr);
+}
+.hljs-deletion {
+  color: var(--color-danger);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
+
+/*
+ * ── Phase 4: learning surfaces ───────────────────────────────────────────────
+ * Unlock glow (header meter), celebration sparks, low-confidence hatching and
+ * dialog backdrop. All motion is neutralised by the reduced-motion rule above.
+ */
+@keyframes lm-glow {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-spark) 70%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-spark) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.lm-unlock-glow {
+  animation:
+    rise-in 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both,
+    lm-glow 1.4s ease-out 300ms 2;
+}
+
+/* Celebration: sparks drift up and fade around the badge. */
+@keyframes lm-spark {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.4) rotate(0deg);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx, 0), var(--dy, -40px)) scale(1) rotate(45deg);
+  }
+}
+.lm-spark {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  color: var(--color-spark);
+  animation: lm-spark 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  pointer-events: none;
+}
+@keyframes lm-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.lm-pop {
+  animation: lm-pop 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* Native <dialog> (celebration, confirms) */
+dialog.lm-dialog {
+  margin: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow: visible;
+}
+dialog.lm-dialog::backdrop {
+  background: color-mix(in srgb, var(--color-learn-900) 35%, transparent);
+  backdrop-filter: blur(2px);
+  animation: fade-in 220ms ease-out both;
+}
+
+/* A style dimension Claude isn't sure about yet: hatched track. */
+.lm-hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--color-learn-100) 0 4px,
+    var(--color-surface) 4px 8px
+  );
+}
