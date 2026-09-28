@@ -1,0 +1,307 @@
+// Learning mode — database schema (spec A7).
+//
+// Prisma 7 notes:
+//  - Connection URLs are NOT in this file. The CLI (migrate/studio) reads them
+//    from prisma.config.ts (DIRECT_URL, falling back to DATABASE_URL); the
+//    runtime client connects through the pg driver adapter with DATABASE_URL
+//    (see src/lib/db.ts). This replaces the old `url` / `directUrl` fields.
+//  - The client is generated into src/generated/prisma (gitignored). Import
+//    it as `@/generated/prisma/client`.
+//
+// Ownership model: every per-user row hangs off `User` with onDelete: Cascade,
+// so a persona reset is "delete the session clone User, re-copy the template".
+// `Concept` is a shared catalog and is never deleted by a reset.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum MessageRole {
+  user
+  assistant
+}
+
+/// text: plain user or assistant message (data = null).
+/// framing: assistant message showing framing questions. data = { exchangeId }
+///   only; questions/responses/status live on the FramingExchange (single
+///   source of truth) and are joined into the MessageDTO server-side.
+/// answer: assistant answer. data = { calloutItemIds?: string[] } (lookup
+///   callouts, already persisted as LearnLaterItem rows) or null.
+enum MessageKind {
+  text
+  framing
+  answer
+}
+
+enum ConversationOrigin {
+  chat
+  dig_in
+}
+
+/// skipped: user chose "just answer" — the concept goes to Learn It Later
+/// (origin = skipped) and the exchange does NOT count toward progress.
+enum FramingStatus {
+  pending
+  answered
+  skipped
+}
+
+enum EntryPoint {
+  code
+  concept
+  worked_example
+}
+
+enum LearnLaterStatus {
+  queued
+  dug_in
+  dismissed
+}
+
+/// skipped: user deferred a concept; flagged: Claude surfaced it (lookup callout / assessor).
+enum LearnLaterOrigin {
+  skipped
+  flagged
+}
+
+enum PersonaKey {
+  maya
+  dev
+  sam
+}
+
+// ─── Users & personas ───────────────────────────────────────────────────────
+
+/// Template rows (isTemplate = true, demoSessionId = "template" — the
+/// TEMPLATE_DEMO_SESSION_ID sentinel in src/config.ts) hold the canonical
+/// persona seed; the unique (demoSessionId, personaKey) therefore enforces one
+/// template per persona. Each browser session gets a clone (isTemplate = false,
+/// demoSessionId = session cookie value, never the sentinel).
+model User {
+  id             String     @id @default(cuid())
+  /// Browser-session cookie value, or "template" for persona templates.
+  demoSessionId  String
+  personaKey     PersonaKey
+  isTemplate     Boolean    @default(false)
+  displayName    String
+  createdAt      DateTime   @default(now())
+  /// Bumped when the session clone is used; lets a future job delete stale clones.
+  lastSeenAt     DateTime   @default(now())
+  /// Set by the assessor (A3) at the end of each run; exposed as ProfileDTO.lastAssessedAt.
+  lastAssessedAt DateTime?
+
+  conversations    Conversation[]
+  framingExchanges FramingExchange[]
+  conceptMastery   ConceptMastery[]
+  learningStyle    LearningStyle?
+  userContext      UserContext?
+  learnLaterItems  LearnLaterItem[]
+
+  @@unique([demoSessionId, personaKey])
+  @@index([isTemplate, personaKey])
+}
+
+// ─── Chat ───────────────────────────────────────────────────────────────────
+
+model Conversation {
+  id               String             @id @default(cuid())
+  userId           String
+  title            String             @default("New chat")
+  origin           ConversationOrigin @default(chat)
+  /// Set for dig-in chats: the Learn It Later item this chat was opened from.
+  learnLaterItemId String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  learnLaterItem   LearnLaterItem?   @relation("DigInConversations", fields: [learnLaterItemId], references: [id], onDelete: SetNull)
+  messages         Message[]
+  framingExchanges FramingExchange[]
+  /// Learn It Later items that originated in this conversation.
+  sourcedItems     LearnLaterItem[]  @relation("LearnLaterSourceConversation")
+
+  @@index([userId, updatedAt])
+  @@index([learnLaterItemId])
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  kind           MessageKind @default(text)
+  /// Markdown text. Empty string for pure framing messages is allowed.
+  content        String
+  /// Structured extras, e.g. framing questions or lookup callouts.
+  data           Json?
+  createdAt      DateTime    @default(now())
+
+  conversation         Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  triggeredFraming     FramingExchange? @relation("FramingUserMessage")
+  framingForMessage    FramingExchange? @relation("FramingQuestionsMessage")
+  answeredFraming      FramingExchange? @relation("FramingAnswerMessage")
+  sourcedLearnLater    LearnLaterItem[] @relation("LearnLaterSourceMessage")
+
+  @@index([conversationId, createdAt])
+}
+
+/// One round of framing questions for a concept question. Progress (P7)
+/// counts rows with status = answered only (not pending, not skipped).
+model FramingExchange {
+  id               String        @id @default(cuid())
+  userId           String
+  conversationId   String
+  /// The user message that triggered framing.
+  userMessageId    String        @unique
+  /// The assistant message (kind = framing) that displays the questions.
+  framingMessageId String?       @unique
+  /// The assistant answer message produced after the user responded.
+  answerMessageId  String?       @unique
+  /// FramingQuestion[]
+  questions        Json
+  /// FramingResponse[]; null until answered.
+  responses        Json?
+  /// Concept slugs the router tagged on the triggering message.
+  conceptSlugs     String[]      @default([])
+  /// LearnLaterCallout to queue (origin = skipped) if the user picks "just answer".
+  skipCallout      Json?
+  status           FramingStatus @default(pending)
+  createdAt        DateTime      @default(now())
+  answeredAt       DateTime?
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userMessage    Message      @relation("FramingUserMessage", fields: [userMessageId], references: [id], onDelete: Cascade)
+  framingMessage Message?     @relation("FramingQuestionsMessage", fields: [framingMessageId], references: [id], onDelete: SetNull)
+  answerMessage  Message?     @relation("FramingAnswerMessage", fields: [answerMessageId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([conversationId])
+}
+
+// ─── Learner profile ────────────────────────────────────────────────────────
+
+/// Shared concept catalog (not per-user). The assessor upserts by slug.
+model Concept {
+  id          String   @id @default(cuid())
+  /// kebab-case, e.g. "welch-t-test"
+  slug        String   @unique
+  name        String
+  /// e.g. "hypothesis testing", "regression", "causal inference"
+  domain      String?
+  description String?
+  createdAt   DateTime @default(now())
+
+  mastery         ConceptMastery[]
+  learnLaterItems LearnLaterItem[]
+}
+
+model ConceptMastery {
+  id        String   @id @default(cuid())
+  userId    String
+  conceptId String
+  /// 0..1
+  score     Float    @default(0)
+  /// MasteryEvidence[]: { note, delta, messageId?, at }
+  evidence  Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concept Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, conceptId])
+}
+
+/// Three style dimensions (P2). Sign conventions:
+///   intuitionVsFormal: -1 = intuition first, +1 = formal first
+///   briefVsThorough:   -1 = brief,           +1 = thorough
+///   entryPoint:        code | concept | worked_example | null (unknown)
+/// *Confidence fields are 0..1. *Overridden = user edited it at Tier 2, so the
+/// assessor must not move that dimension any more.
+model LearningStyle {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  intuitionVsFormal           Float   @default(0)
+  intuitionVsFormalConfidence Float   @default(0)
+  intuitionVsFormalOverridden Boolean @default(false)
+
+  entryPoint           EntryPoint?
+  entryPointConfidence Float       @default(0)
+  entryPointOverridden Boolean     @default(false)
+
+  briefVsThorough           Float   @default(0)
+  briefVsThoroughConfidence Float   @default(0)
+  briefVsThoroughOverridden Boolean @default(false)
+
+  /// StyleEvidence[]: { dimension, note, at, messageId? }
+  evidence  Json     @default("[]")
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Inferred user context (P4). Editable at Tier 2.
+model UserContext {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  /// e.g. "MPH, epidemiology"
+  field      String?
+  projects   String[] @default([])
+  dataTypes  String[] @default([])
+  notes      String?
+  /// True once the user has edited it; the assessor should then only append.
+  userEdited Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LearnLaterItem {
+  id                   String           @id @default(cuid())
+  userId               String
+  conceptId            String?
+  title                String
+  /// Brief explanation shown on the card.
+  preview              String
+  /// How the concept applied where it came up.
+  appliedContext       String
+  sourceConversationId String?
+  sourceMessageId      String?
+  status               LearnLaterStatus @default(queued)
+  origin               LearnLaterOrigin @default(flagged)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concept            Concept?       @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+  sourceConversation Conversation?  @relation("LearnLaterSourceConversation", fields: [sourceConversationId], references: [id], onDelete: SetNull)
+  sourceMessage      Message?       @relation("LearnLaterSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  digInConversations Conversation[] @relation("DigInConversations")
+
+  @@index([userId, status])
+  @@index([sourceConversationId])
+  @@index([sourceMessageId])
+  @@index([conceptId])
+}
+
+// ─── Ops ────────────────────────────────────────────────────────────────────
+
+/// Fixed-window rate limit (X3). One row per (key, window); increment with an
+/// upsert on the composite id (hitRateLimit in src/lib/rate-limit.ts). Keys
+/// come from RATE_LIMIT_KEYS in src/config.ts: "sess:<demoSessionId>",
+/// "ip:<ip>", "global:<yyyy-mm-dd>", "pass:<ip>".
+model RateLimit {
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@id([key, windowStart])
+}

@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/*
+ * Visual foundation (V1, V2). Light, Claude-evoking: cream paper, warm ink,
+ * serif display, coral accent. The "learning" palette (deep teal) is reserved
+ * for Learning-mode features — framing cards, Learn It Later chips, the
+ * profile panel — so reviewers can see what's new at a glance.
+ *
+ * Contrast (WCAG AA, 4.5:1 for body text), measured:
+ *   ink-muted  on cream 5.30, surface-muted 4.85
+ *   ink-faint  on cream 4.62, surface 4.95 — on surface-muted only 4.23, so
+ *              use ink-muted for text there
+ *   white on accent-strong 4.87, on accent-strong-hover 6.17
+ *   white on accent (#d97757) is only 3.12: never put text on bg-accent;
+ *   it is for focus rings, borders, icons and large decorative fills.
+ *
+ * Usage (Tailwind v4 utilities are generated from @theme):
+ *   bg-cream  bg-surface  bg-surface-muted  border-line
+ *   text-ink  text-ink-muted  text-ink-faint
+ *   bg-accent  hover:bg-accent-hover  bg-accent-soft  text-accent
+ *   bg-accent-strong  hover:bg-accent-strong-hover   (filled buttons w/ white text)
+ *   bg-learn-50 … bg-learn-900, text-learn-700, border-learn-200, ring-learn-500
+ *   font-serif (display)  font-sans (body)  font-mono (code)
+ */
+
+@theme {
+  /* Base: cream paper */
+  --color-cream: #f5f1e8;
+  --color-surface: #fbf9f4; /* cards, composer, raised panels */
+  --color-surface-muted: #ede7da; /* sidebar, hover fills */
+  --color-line: #e2dacb; /* hairline borders */
+  --color-line-strong: #cfc5b2;
+
+  /* Warm ink */
+  --color-ink: #2b2621;
+  --color-ink-muted: #6b6258;
+  --color-ink-faint: #756b60; /* ≥4.5:1 on cream/surface (see contrast notes) */
+
+  /* Coral accent (primary actions, focus) */
+  --color-accent: #d97757;
+  --color-accent-hover: #c4633f;
+  --color-accent-soft: #f6e1d6;
+  --color-accent-strong: #b8532f; /* filled buttons: white text 4.87:1 */
+  --color-accent-strong-hover: #a3441f; /* white text 6.17:1 */
+  --color-accent-ink: #8a3f24; /* coral text on light backgrounds */
+
+  /* Learning palette — deep teal, distinct from the coral chrome */
+  --color-learn-50: #eef6f4;
+  --color-learn-100: #d8ebe6;
+  --color-learn-200: #b2d6cd;
+  --color-learn-300: #85bcaf;
+  --color-learn-400: #569d8f;
+  --color-learn-500: #3a8175;
+  --color-learn-600: #2d675e;
+  --color-learn-700: #24534c;
+  --color-learn-800: #1c3f3a;
+  --color-learn-900: #132b28;
+
+  /* Learning highlight (unlock celebration, "new" badges) — warm gold */
+  --color-spark: #e0a93b;
+  --color-spark-soft: #f8ecd0;
+
+  /* Mastery scale, low → high (profile concept bars) */
+  --color-mastery-low: #d98a6b;
+  --color-mastery-mid: #d9b45a;
+  --color-mastery-high: #3a8175;
+
+  /* Status */
+  --color-danger: #b4432f;
+
+  /* Type — font variables come from next/font in layout.tsx */
+  --font-serif: var(--font-source-serif), ui-serif, Georgia, serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --radius-card: 1rem;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
