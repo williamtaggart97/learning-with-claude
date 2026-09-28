@@ -28,6 +28,16 @@
  *     show; anything else is logged and sent as "Something went wrong". A
  *     client disconnect calls the generator's `return()` — abort upstream
  *     Claude requests in its `finally`.
+ *     Stopping (client disconnect) keeps what was streamed, like claude.ai:
+ *     if ≥1 answer_delta was sent, the partial text plus a trailing
+ *     "\n\n_(Stopped.)_" is stored as the answer message (kind "answer", R5;
+ *     callout items that already exist are attached, lookup callouts are
+ *     not created) and the assessor does NOT run (R12). Stopped before any
+ *     delta: the framing-answer route stores an answer message containing
+ *     just "_(Stopped before Claude answered.)_" (R10); POST /api/chat keeps
+ *     only the user message. The UI shows its local partial text on stop and
+ *     reconciles with GET /api/conversations/[id] later. DB writes after the
+ *     disconnect never use the aborted request signal.
  * R4  Timestamps in DTOs are ISO-8601 strings.
  * R5  Whenever a route adds a Message to a conversation it must also touch
  *     `Conversation.updatedAt` (e.g. `conversation.update({ data: { updatedAt:
@@ -78,11 +88,14 @@
  *
  * POST /api/framing/[exchangeId]/answer
  *                                      body FramingAnswerRequest → NDJSON
- * R10 404 if not owned; 409 conflict if the exchange is not `pending`; then
- *     rate limit (R6). Counts toward the limit whether answered or skipped.
- *     skip = false: validate responses (R11), store them, mark `answered`
- *       (answeredAt), then stream the answer shaped by the responses (L6) and
- *       learning style (L7).
+ * R10 Order: 404 if not owned → 409 conflict if the exchange is not
+ *     `pending` → validate responses (R11, skip = false only; 400) → rate
+ *     limit (R6; 429) → transition out of `pending` atomically (update where
+ *     status = "pending"; a lost race → 409) → stream. Validation comes
+ *     before the rate limit so rejected submissions don't consume quota.
+ *     Accepted submissions count toward the limit whether answered or skipped.
+ *     skip = false: store the responses, mark `answered` (answeredAt), then
+ *       stream the answer shaped by the responses (L6) and learning style (L7).
  *       Stream: progress? → answer_delta… → callouts? → done
  *       `progress` is emitted when the answered-exchange count changed; its
  *       `unlocked` drives the immediate Tier-unlock celebration (X7).
@@ -93,7 +106,24 @@
  *       Stream: answer_delta… → callouts → done, where `callouts` includes
  *       the queued skip item so the UI can show "saved to Learn It Later".
  *     Either way: store the answer message (kind "answer", R5) and set
- *     FramingExchange.answerMessageId.
+ *     FramingExchange.answerMessageId. This holds even when the user stops
+ *     the stream (R3): the partial answer + "_(Stopped.)_", or, with no text
+ *     yet, "_(Stopped before Claude answered.)_", becomes the answer message,
+ *     so the exchange never stays answered/skipped without one (a retry
+ *     would 409). A stopped exchange still counts toward progress if it was
+ *     answered; the assessor doesn't run for it.
+ *     Upstream failure (Claude busy/refusal/network, empty answer — not a
+ *     stop): the stream still ends with the `error` event (R3), and before
+ *     it the exchange is settled so it isn't stuck:
+ *       ≥1 answer_delta sent → the partial text + "\n\n_(Claude hit an
+ *         error; this answer is incomplete.)_" is stored as the answer
+ *         message and answerMessageId is set (no assessor run).
+ *       no delta → the exchange is reverted to `pending` (responses and
+ *         answeredAt cleared) so the user can resubmit the same card. A
+ *         queued skip item stays; R13 dedupe reuses it on the retry. If a
+ *         `progress` event was already sent, the answered count silently
+ *         drops back (the UI may have shown an unlock that the successful
+ *         retry re-announces); this is accepted.
  * R11 Framing responses are validated against the STORED questions (zod only
  *     checks shape + the dontKnow ⇔ answer === null rule): exactly one
  *     response per question id, no unknown ids; when dontKnow is false:
@@ -110,10 +140,13 @@
  *     finishes and survives on Vercel; register it in the handler and have the
  *     callback await the stream's outcome, skipping on error). It never delays
  *     `done`. When it finishes it sets User.lastAssessedAt (even if nothing
- *     changed). Set `maxDuration` on the route to cover answer + assessor.
+ *     changed); it typically lands ~4–6s after `done`. It does not run for a
+ *     stopped answer (R3). Set `maxDuration` on the route to cover answer +
+ *     assessor.
  *     UI rule: remember profile.tier and profile.lastAssessedAt before
- *     sending; after `done`, refetch GET /api/profile at ~1.5s and ~4s,
- *     stopping early once lastAssessedAt changes. If the new tier is higher
+ *     sending; after `done`, refetch GET /api/profile at ~1.5s, 4s, 8s and
+ *     12s, stopping early once lastAssessedAt differs from the remembered
+ *     pre-send value. If the new tier is higher
  *     than the remembered one (and it wasn't already celebrated via a
  *     `progress` event), show the unlock celebration — this catches a Tier 2
  *     unlock via 8 concepts, which only the assessor can cause.
