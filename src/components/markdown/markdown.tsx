@@ -13,9 +13,16 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { CodeBlock } from "./code-block";
-import { normalizeMathDelimiters, prepareStreamingMarkdown, repairUnclosedFence, splitMarkdownBlocks } from "./prepare";
+import {
+  normalizeMathDelimiters,
+  prepareStreamingMarkdown,
+  REMARK_MATH_OPTIONS,
+  repairUnclosedFence,
+  splitMarkdownBlocks,
+} from "./prepare";
 
-const remarkPlugins: Options["remarkPlugins"] = [remarkGfm, remarkMath];
+// Single "$" stays literal (currency); inline math is $$ … $$ (see prepare.ts).
+const remarkPlugins: Options["remarkPlugins"] = [remarkGfm, [remarkMath, REMARK_MATH_OPTIONS]];
 // KaTeX first so math nodes are rendered before the highlighter sees them.
 const katex: NonNullable<Options["rehypePlugins"]>[number] = [
   rehypeKatex,

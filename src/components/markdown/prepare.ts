@@ -1,13 +1,20 @@
 // Markdown pre-processing for rendering (A5). Pure; client- and server-safe.
 //
-// normalizeMathDelimiters: Claude sometimes writes \( … \) and \[ … \];
-//   remark-math only understands $ … $ / $$ … $$, so convert them (outside
-//   code).
+// Math syntax: remark-math runs with singleDollarTextMath: false, so a single
+// "$" is always literal (prices like "$0.29 to $0.24" are common). Inline math
+// is $$ … $$ within a line; display math is $$ on its own lines.
+//
+// normalizeMathDelimiters: Claude sometimes writes \( … \) and \[ … \], which
+//   remark-math doesn't understand, so convert them (outside code): \( … \)
+//   → inline $$ … $$; a \[ … \] filling its line(s) → a $$ display block (a
+//   mid-line one becomes inline $$ … $$).
 // prepareStreamingMarkdown: make a PARTIAL answer safe to render mid-stream:
 //   - an unterminated ``` fence is closed, so partial code renders as code;
-//   - an unterminated $$ display block is held back until it closes (instead
-//     of flashing raw TeX);
-//   - an unterminated inline $ on the last line is held back likewise.
+//   - an unterminated $$ (inline or display) is held back until it closes
+//     (instead of flashing raw TeX). A single "$" is never held back.
+
+/** remark-math options for every renderer: a single "$" is literal text. */
+export const REMARK_MATH_OPTIONS = { singleDollarTextMath: false } as const;
 
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
 
@@ -52,8 +59,14 @@ export function normalizeMathDelimiters(src: string): string {
   if (!src.includes("\\(") && !src.includes("\\[")) return src;
   return mapOutsideCode(src, (text) =>
     text
-      .replace(/\\\[([\s\S]+?)\\\]/g, (_m, body: string) => `$$${body}$$`)
-      .replace(/\\\(([\s\S]+?)\\\)/g, (_m, body: string) => `$${body.trim()}$`),
+      // \[ … \] alone on its line(s): a display block, keeping the indentation
+      // (so it stays inside a list item).
+      .replace(
+        /(^|\n)([ \t]*)\\\[([\s\S]+?)\\\][ \t]*(?=\n|$)/g,
+        (_m, pre: string, indent: string, body: string) => `${pre}${indent}$$\n${indent}${body.trim()}\n${indent}$$`,
+      )
+      .replace(/\\\[([\s\S]+?)\\\]/g, (_m, body: string) => `$$${body.trim()}$$`)
+      .replace(/\\\(([\s\S]+?)\\\)/g, (_m, body: string) => `$$${body.trim()}$$`),
   );
 }
 
@@ -78,14 +91,12 @@ export function prepareStreamingMarkdown(src: string): string {
   const lines = src.split("\n");
   let fence: string | null = null;
   let offset = 0;
-  let displayOpenAt = -1; // absolute offset of an unmatched $$
-  let inlineOpenAt = -1; // absolute offset of an unmatched $ on the current line
+  let displayOpenAt = -1; // absolute offset of an unmatched $$ (inline or display)
   let inlineCode = false;
 
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li];
     const m = FENCE_RE.exec(line);
-    inlineOpenAt = -1;
     if (fence) {
       if (m && m[1][0] === fence[0] && m[1].length >= fence.length && line.trim() === m[1]) fence = null;
     } else if (m && displayOpenAt < 0) {
@@ -101,12 +112,8 @@ export function prepareStreamingMarkdown(src: string): string {
       }
       for (const run of dollarRuns(tickFree)) {
         if (inlineCode && run.index > lastTick) break;
-        if (run.length >= 2) {
-          displayOpenAt = displayOpenAt < 0 ? offset + run.index : -1;
-          inlineOpenAt = -1;
-        } else if (displayOpenAt < 0) {
-          inlineOpenAt = inlineOpenAt < 0 ? offset + run.index : -1;
-        }
+        // Single "$" is literal (currency); only $$ opens/closes math.
+        if (run.length >= 2) displayOpenAt = displayOpenAt < 0 ? offset + run.index : -1;
       }
     }
     offset += line.length + 1;
@@ -114,7 +121,6 @@ export function prepareStreamingMarkdown(src: string): string {
 
   if (fence) return `${src}\n${fence}`;
   if (displayOpenAt >= 0) return src.slice(0, displayOpenAt).trimEnd();
-  if (inlineOpenAt >= 0) return src.slice(0, inlineOpenAt).trimEnd();
   return src;
 }
 

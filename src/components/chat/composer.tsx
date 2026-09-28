@@ -68,7 +68,7 @@ export function Composer({
         placeholder={
           busy
             ? "Claude is responding…"
-            : (placeholder ?? (wide ? "Ask anything about stats or data science…" : "Ask anything…"))
+            : (placeholder ?? (wide ? "Ask about anything you’re learning or working on…" : "Ask anything…"))
         }
         className="field-sizing-content block max-h-64 min-h-[3.25rem] w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-base leading-relaxed text-ink placeholder:text-ink-faint focus:outline-none disabled:cursor-not-allowed"
       />

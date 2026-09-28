@@ -2,13 +2,13 @@
 
 **Thesis:** Claude still answers, but every exchange also builds the user's understanding and adds to a profile of what they know, how they learn, and what they care about.
 
-**Target user:** a grad student in data science and statistics under deadline pressure who genuinely wants to understand the material. This carries over directly to a working professional in a new field.
+**Target user:** anyone building skills for their studies or work, in any field: students and working professionals who are often short on time but genuinely want to understand what they're learning and apply it. Nothing is assumed about the user's field; Claude infers it as it goes. The seeded personas show two examples, data science and marketing.
 
 ## How a message is handled
 
 1. **Router (Haiku 4.5, structured output):** classifies the message.
    - **Concept question:** Claude asks 1–3 framing questions first. Most are short answer, some are multiple choice or multi-select, and "I don't know" is always an option. They lay out the steps toward the answer without revealing it or asking the user to guess. Framing happens at most once per topic in a conversation.
-   - **Lookup:** the answer comes right away. Claude also finds the hidden decisions behind the question (e.g., which t-test). One is featured and saved to **Learn It Later**.
+   - **Lookup:** the answer comes right away. Claude also finds the hidden decisions behind the question (e.g., which t-test, or which attribution window a campaign report uses). One is featured and saved to **Learn It Later**.
    - **Task** (fix this, write this code or text, clean this data): the work comes first and is never blocked by framing. Hidden decisions are handled as for lookups, and a real misconception behind the problem counts as one.
    - **The end-of-answer slot:** every lookup and task answer ends with at most one box. Which box appears is an experiment: a Learn It Later card, a "walk me through it" offer, a one-question quick check, "apply it to your project", or nothing. Which hidden decision gets featured is partly random too, so we can learn what actually gets engagement.
 2. **Answerer (Sonnet 5, streamed):** built on the user's framing responses (confirming what they got right, correcting the rest) and on their learning style. Rendered as markdown with KaTeX math and highlighted code.
@@ -42,9 +42,9 @@ Model IDs live in config so the answerer can be switched (e.g., to Opus for a de
 - **Database schema:** `User` (with `demoSessionId`), `Conversation`, `Message`, `FramingExchange`, `Concept`, `ConceptMastery`, `LearningStyle`, `UserContext`, `LearnLaterItem`, plus a table for rate limits.
 - **Access:** no auth. A shared passcode in middleware gates the app, and a per-user rate limit protects the API key.
 - **Demo personas:** each browser session gets its own copies, keyed by a cookie, and there's a "Reset this persona" button. Personas can be switched freely once past the passcode.
-  - **Maya** (super user): MPH epidemiology, readmissions thesis. Tier 2, ~12 concepts, fully inferred learning style, 5 Learn It Later items, 4–5 past conversations.
+  - **Maya** (super user): junior marketer at Quillhaven, a small DTC home-textiles brand, using Claude to build skills and apply them to her job (email, paid social, reporting, attribution). Tier 2, 15 concepts, fully inferred learning style, 5 Learn It Later items, 5 past conversations.
   - **Dev** (almost unlocked): MS data science, churn-modeling capstone. 4/5 framing exchanges, so one more triggers the Tier 1 unlock live. ~2 past conversations.
-  - **Sam** (brand new): no history; the empty state with starter prompts.
+  - **Sam** (brand new): no history, and nothing known about him or his field; the empty state with field-neutral starter prompts.
 - **Visual style:** Claude-like (cream background, serif display text, coral accent) with no Anthropic logos. The learning features (framing cards, Learn It Later chips, profile panel) get their own visual language on top.
 
 ## Deliverables

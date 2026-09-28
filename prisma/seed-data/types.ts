@@ -41,7 +41,10 @@ export interface SeedExchangeTurn {
   thinkMinutes?: number;
 }
 
-/** A lookup: user message → immediate answer (optionally with callouts). */
+/**
+ * A lookup or task: user message → immediate answer (optionally with
+ * callouts). Both routes skip framing, so the stored rows are identical.
+ */
 export interface SeedLookupTurn {
   kind: "lookup";
   ref: string;

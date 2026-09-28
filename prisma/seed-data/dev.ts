@@ -108,7 +108,7 @@ export const dev: SeedPersona = {
           ref: "d1.x1",
           user: "My churn model (random forest) gets 92% accuracy but it basically never predicts churn. Only 8% of customers churn. Should I use SMOTE to fix the imbalance?",
           framingIntro: "Before reaching for SMOTE, two questions:",
-          conceptSlugs: ["class-imbalance", "precision-recall", "decision-thresholds"],
+          conceptSlugs: ["class-imbalance", "precision-recall"],
           questions: [
             { id: "q1", format: "short_answer", prompt: "If a model predicted \"no churn\" for every customer, what accuracy would it get on your data?" },
             {
@@ -116,8 +116,8 @@ export const dev: SeedPersona = {
               format: "multiple_choice",
               prompt: "What will the retention team actually do with the model's output?",
               options: [
-                "Call a fixed number of the highest-risk customers each month",
-                "Send an offer to everyone above some risk cutoff",
+                "Call a fixed number of top-risk customers",
+                "Send offers to everyone above a risk cutoff",
                 "Report an overall churn forecast to leadership",
               ],
             },
@@ -168,7 +168,7 @@ export const dev: SeedPersona = {
           ref: "d1.x2",
           user: "Asked the partner: they can call about 400 customers a month, a call costs ~$6, and a saved customer is worth ~$240 over a year. They think a call saves maybe 1 in 4 would-be churners. How do I pick the threshold?",
           framingIntro: "Those numbers are all you need. Two questions:",
-          conceptSlugs: ["decision-thresholds", "probability-calibration", "precision-recall"],
+          conceptSlugs: ["decision-thresholds", "probability-calibration"],
           questions: [
             { id: "q1", format: "short_answer", prompt: "What's the expected value of calling a customer whose churn probability is p?" },
             {
@@ -192,16 +192,20 @@ export const dev: SeedPersona = {
           answer: md`
             Your expected value is exactly right. Set it to zero to get the break-even probability:
 
-            $$p^* \times 0.25 \times 240 = 6 \quad\Rightarrow\quad p^* = \frac{6}{60} = 0.10$$
+            $$
+            p^* \times 0.25 \times 240 = 6 \quad\Rightarrow\quad p^* = \frac{6}{60} = 0.10
+            $$
 
-            Calling is worth it for any customer with $p > 0.10$. Then apply the capacity limit:
+            Calling is worth it for any customer with $$p > 0.10$$. Then apply the capacity limit:
 
             - **More than 400 customers above 0.10?** Call the top 400 by predicted risk. Here you're right that ranking is all that matters.
             - **Fewer than 400?** Stop at the threshold — and now the probability *itself* matters.
 
             Your second answer shows why that's a problem. Customers the forest scores around 0.10 actually churn about 4% of the time, so a call to one of them is worth
 
-            $$0.04 \times 0.25 \times 240 - 6 = -3.60 \text{ dollars}$$
+            $$
+            0.04 \times 0.25 \times 240 - 6 = -3.60 \text{ dollars}
+            $$
 
             Taken at face value, the 0.10 cutoff loses money on exactly the customers near it. That gap between what the model says and what actually happens is **calibration**. Random forests are often poorly calibrated — they squeeze probabilities toward the middle, so low risks come out too high. Ranking is enough for the top-400 rule; the cutoff needs calibrated probabilities. Check the whole curve and recalibrate:
 
@@ -215,7 +219,7 @@ export const dev: SeedPersona = {
             n_to_call = min(400, (p_cal > 0.10).sum())
             ~~~
 
-            One more lever for the report: expected monthly value is $\sum_{i \in \text{called}} (0.25 \times 240 \times p_i - 6)$. That number means more to the partner than any AUC.
+            One more lever for the report: expected monthly value is $$\sum_{i \in \text{called}} (0.25 \times 240 \times p_i - 6)$$. That number means more to the partner than any AUC.
           `,
         },
       ],
@@ -231,7 +235,7 @@ export const dev: SeedPersona = {
           ref: "d2.x1",
           user: "Switched to gradient boosting and validation AUC jumped to 0.97. My advisor said \"that's suspicious\". Is he just being negative?",
           framingIntro: "He's probably right, and it's quick to check. Two questions:",
-          conceptSlugs: ["data-leakage", "cross-validation"],
+          conceptSlugs: ["data-leakage"],
           questions: [
             {
               id: "q1",
@@ -287,20 +291,20 @@ export const dev: SeedPersona = {
           ref: "d2.x2",
           user: "How do I actually do the time-based split with monthly snapshots? The label is \"churned in the next month\".",
           framingIntro: "One question to anchor it:",
-          conceptSlugs: ["cross-validation", "data-leakage"],
+          conceptSlugs: ["cross-validation"],
           questions: [
             {
               id: "q1",
               format: "multiple_choice",
               prompt: "If the model scores customers on October 1, which data can the features use?",
               options: [
-                "Only data that was recorded on or before September 30",
-                "Everything in the warehouse on the day you train the model",
-                "September data plus October churn labels for similar customers",
+                "Only data recorded on or before September 30",
+                "Everything in the warehouse on training day",
+                "September data plus October labels from similar customers",
               ],
             },
           ],
-          responses: [{ questionId: "q1", answer: "Only data that was recorded on or before September 30", dontKnow: false }],
+          responses: [{ questionId: "q1", answer: "Only data recorded on or before September 30", dontKnow: false }],
           status: "answered",
           skipCallout: {
             title: "Time-based validation",

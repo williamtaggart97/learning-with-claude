@@ -2,7 +2,7 @@
 
 A working prototype of **Learning mode**, a Claude add-on for learning through collaboration. Claude still answers, but each exchange also builds the user's understanding and adds to a profile of what they know, how they learn, and what they care about.
 
-- **Target user:** a data science / statistics grad student under deadline pressure who wants to understand the material, not just get the answer. The same pattern fits a working professional moving into a new field.
+- **Target user:** anyone building skills for their studies or work, in any field: students and working professionals who are short on time but want to understand what they're learning, not just get the answer. The seeded personas cover data science and marketing.
 - **Core idea:** for *concept* questions Claude asks 1–3 short **framing questions** before it answers. They lay out the steps toward the answer without giving it away, and "I don't know" is always an option. *Lookups* and *tasks* are answered straight away, and the concepts behind them go to a **Learn It Later** queue so the user stays on task.
 - Real Claude API calls throughout. Nothing is scripted.
 
@@ -16,14 +16,14 @@ After the passcode, use the persona switcher to move between three seeded learne
 
 | Persona | Who | What it shows |
 |---|---|---|
-| **Maya** | MPH epidemiology, readmissions thesis. Tier 2. | The full learner profile: ~12 concepts with mastery and the evidence behind each score, an inferred learning style you can edit, suggested next topics, 5 Learn It Later items, past conversations in the sidebar. |
+| **Maya** | Junior marketer (email & paid social) at Quillhaven, a small DTC home-textiles brand. Tier 2. | The full learner profile, for a marketer: 15 concepts with mastery and the evidence behind each score, an inferred learning style you can edit, suggested next topics, 5 Learn It Later items, 5 past conversations in the sidebar. |
 | **Dev** | MS data science, churn capstone. 4 of 5 framing exchanges done, 3 concepts tracked. | **The unlock.** Switch to Dev, ask a concept question (e.g. *"Why does regularization reduce overfitting?"*), and answer the framing card. That fifth exchange triggers the Tier 1 reveal ("here's how I think you learn"). |
-| **Sam** | Brand new. | The empty state with starter prompts that cover all three router paths, and the Tier 0 progress meter. |
+| **Sam** | Brand new. Nothing known, not even his field. | The empty state with field-neutral starter prompts that cover all three router paths, and the Tier 0 progress meter. |
 
 Things to look for:
 
 1. **The framing card.** Ask a *why* or *which method* question. Claude asks 1–3 questions (short answer, multiple choice or multi-select, each with "I don't know"), then answers by building on what you said: it confirms what you got right and corrects the rest. **Just answer** (skip) is always available, and the skipped concept goes to Learn It Later.
-2. **Lookups and tasks.** Ask *"What's the R code for a two-sample t-test?"* or paste an error to fix. The answer comes immediately. Claude still spots the hidden decision (e.g. Welch vs. Student) and saves it.
+2. **Lookups and tasks.** Ask *"What's the R code for a two-sample t-test?"* or *"Draft a report on last month's email campaigns"*, or paste an error to fix. The answer comes immediately. Claude still spots the hidden decision (e.g. Welch vs. Student, or how open rate is defined) and saves it.
 3. **Learn It Later + Dig in.** Open the queue and click **Dig in** on a card. A new chat opens that ties the concept back to the problem where it came up, then applies it to other problems in the user's context.
 4. **The end-of-answer experiment.** Each lookup or task answer ends with at most one box, drawn at random from: a Learn It Later card, "Walk me through it" (framing after the answer), a one-question quick check, "Apply it to your project", or nothing (the control). The readout is at **`/results`**, linked as **Experiment results** in the persona menu.
 5. **The profile updates itself.** A background assessor updates mastery, style and context a few seconds after each answer. Watch the profile panel change.
@@ -75,7 +75,7 @@ Locally the passcode gate is **off** unless you set `DEMO_PASSCODE`.
 
 | Script | What it does |
 |---|---|
-| `npm test` | Offline unit tests (router policy, slot experiment, style edits). No network or DB needed. |
+| `npm test` | Offline unit tests (router policy, slot experiment, style edits, starter prompts). No network or DB needed. |
 | `npm run typecheck` / `npm run lint` | `tsc` (after `next typegen`) / ESLint |
 | `npm run build` | `prisma generate && next build` |
 | `npm run db:studio` | Prisma Studio |
@@ -133,6 +133,6 @@ unset DIRECT_URL DATABASE_URL
 - **The experiment is instrumentation, not a result.** Demo traffic is far too small for significance. With real traffic, per-user assignment and a bandit (e.g. Thompson sampling) would replace per-answer uniform randomization (E4, E5).
 - **The assessor is best effort.** It runs after the response and can be skipped (e.g. for a stopped answer or on timeout), so a profile update can occasionally be missed. Mastery scores are heuristic estimates from a small model, not psychometrics.
 - **Rate limits are fixed windows in Postgres.** That's enough to protect a demo key, not a production abuse system.
-- **Domain.** Prompts, seed data and the concept catalog are tuned for data science and statistics.
+- **Domain.** Prompts are field-neutral, but the concept catalog is seeded only for data science/statistics and marketing. Other fields work; their concepts are invented on the fly, so slugs can be less consistent across conversations.
 - **No in-browser code execution.** Code is rendered, not run.
 - The visual style evokes Claude (cream, serif, coral) and deliberately uses no Anthropic logos or wordmarks.
