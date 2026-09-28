@@ -22,7 +22,7 @@ export type AnswerInput = {
   /** The user message being answered (for dig-in: the kickoff message). */
   message: string;
 } & (
-  | { mode: "lookup" | "skip" }
+  | { mode: "lookup" | "task" | "direct" | "skip" }
   | { mode: "framing"; questions: FramingQuestion[]; responses: FramingResponse[] }
   | {
       mode: "dig_in";
@@ -59,7 +59,17 @@ export function buildAnswerRequest(input: AnswerInput): { system: string; messag
   }));
   messages.push({ role: "user", content: finalContent });
 
-  return { system: answererSystem(mode, formatLearner(input.learner)), messages };
+  return { system: answererSystem(mode, formatLearner(learnerForMode(input))), messages };
+}
+
+/**
+ * Task mode never sees project/data/notes context: deliverables must use only
+ * facts from the conversation (placeholders otherwise), and prompt rules alone
+ * didn't stop project details leaking in as "e.g." hints. Field is kept.
+ */
+function learnerForMode(input: AnswerInput): LearnerSnapshot {
+  if (input.mode !== "task" || !input.learner.context) return input.learner;
+  return { ...input.learner, context: { ...input.learner.context, projects: [], dataTypes: [], notes: null } };
 }
 
 /**
@@ -68,15 +78,17 @@ export function buildAnswerRequest(input: AnswerInput): { system: string; messag
  */
 export function streamAnswer(input: AnswerInput, signal?: AbortSignal): AsyncGenerator<string, void, undefined> {
   const { system, messages } = buildAnswerRequest(input);
+  // Lookups and direct (deadline) concept answers are short by design.
+  const quick = input.mode === "lookup" || input.mode === "direct";
   return streamText({
     model: MODELS.answerer,
     // Adaptive thinking (set explicitly in streamText) shares max_tokens with
     // the visible answer, so these leave generous room beyond a long answer
     // (~2–4k tokens). Streaming, so large values carry no timeout risk.
-    maxTokens: input.mode === "lookup" ? 8000 : 16000,
+    maxTokens: quick ? 8000 : 16000,
     // Low/medium effort keeps thinking short and time-to-first-token
     // reasonable for chat.
-    effort: input.mode === "lookup" ? "low" : "medium",
+    effort: quick ? "low" : "medium",
     system,
     messages,
     signal,

@@ -35,6 +35,7 @@ import type {
   RouterResultSchema,
   StyleEvidenceSchema,
   StyleSignalSchema,
+  TaskRouterResultSchema,
 } from "./schemas";
 
 // ─── Primitives ─────────────────────────────────────────────────────────────
@@ -69,6 +70,7 @@ export type LearnLaterCallout = z.infer<typeof LearnLaterCalloutSchema>;
 export type RouterResult = z.infer<typeof RouterResultSchema>;
 export type ConceptRouterResult = z.infer<typeof ConceptRouterResultSchema>;
 export type LookupRouterResult = z.infer<typeof LookupRouterResultSchema>;
+export type TaskRouterResult = z.infer<typeof TaskRouterResultSchema>;
 export type AssessedConcept = z.infer<typeof AssessedConceptSchema>;
 export type StyleSignal = z.infer<typeof StyleSignalSchema>;
 export type AssessedUserContext = z.infer<typeof AssessedUserContextSchema>;

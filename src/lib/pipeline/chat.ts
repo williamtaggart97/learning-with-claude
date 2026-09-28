@@ -11,6 +11,7 @@ import { ndjsonResponse } from "@/lib/ndjson";
 import { ASSESSMENT_MAX_WAIT_MS, createAssessmentGate, runAfterStream, type AssessmentGate } from "@/lib/pipeline/assess";
 import { loadCatalog, loadLearnerSnapshot, loadTurns } from "@/lib/pipeline/context";
 import { classifyDigIn, enforceChatRateLimits, titleFromMessage } from "@/lib/pipeline/guards";
+import { planRoute } from "@/lib/pipeline/route-policy";
 import { answerAndPersist, linkedAbort, touchConversation } from "@/lib/pipeline/stream";
 import { ChatRequestSchema } from "@/lib/schemas";
 import { getSessionUser } from "@/lib/session";
@@ -157,6 +158,23 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
       throw err;
     }
 
+    // ── Framing policy (L4 deadline, L9 once per topic, L5 one saved item),
+    // enforced in code.
+    const earlier =
+      route.kind === "concept"
+        ? await db.framingExchange.findMany({
+            where: { conversationId, conceptSlugs: { hasSome: route.conceptSlugs } },
+            select: { conceptSlugs: true, status: true },
+          })
+        : [];
+    const plan = planRoute(route, { message, earlier });
+    if (plan.downgraded) {
+      console.info(
+        `[chat] framing downgraded (${plan.downgraded}; slugs: ${plan.matchedSlugs.join(", ") || "-"}) → ${plan.answerMode}`,
+      );
+    }
+    route = plan.route;
+
     if (route.kind === "concept") {
       const { exchangeId, messageId } = await db.$transaction(async (tx) => {
         const framingMsg = await tx.message.create({
@@ -185,10 +203,12 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
       return;
     }
 
-    // ── Lookup: answer now, then persist callouts (R13) and emit them (L5).
-    const callouts = route.callouts ?? [];
+    // ── Lookup / task / direct: answer now (L5, L8), then persist the ONE
+    // featured Learn It Later item (R13) and emit it.
+    const mode = plan.answerMode ?? "lookup";
+    const callouts = plan.persist;
     yield* answerAndPersist({
-      answer: { mode: "lookup", learner, history, message },
+      answer: { mode, learner, history, message },
       signal: abort.signal,
       gate: input.gate,
       persist: async (text, { incomplete }) =>
@@ -221,7 +241,7 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
         conversationId,
         userMessageId,
         answerMessageId,
-        mode: "lookup",
+        mode,
         userMessage: message,
         answer: text,
         history,

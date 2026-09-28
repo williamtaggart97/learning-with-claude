@@ -91,8 +91,11 @@ export const LearnLaterCalloutSchema = z.object({
 // ─── Router (A1) ────────────────────────────────────────────────────────────
 
 /**
- * Single Haiku call: classify + (for concepts) write framing questions.
- * Lean toward "concept" when in doubt (L4). Discriminated on `kind`.
+ * Single Haiku call: classify concept | lookup | task + (for concepts) write
+ * framing questions. Lean toward "concept" only when choosing between concept
+ * and lookup; deliverables and deadline messages are never framed (L4, L8).
+ * Framing happens at most once per topic per conversation (L9, enforced in
+ * the pipeline). Discriminated on `kind`.
  * (If the structured-output JSON schema needs to be flat, 2b may send a flat
  * variant to Claude but must still parse the reply with this schema.)
  */
@@ -119,16 +122,33 @@ export const LookupRouterResultSchema = z.object({
   kind: z.literal("lookup"),
   ...RouterCommon,
   /**
-   * Optional hidden decisions to flag as Learn It Later callouts (L5). The
-   * pipeline may instead derive callouts elsewhere; either way they are
-   * persisted, then streamed as a `callouts` event.
+   * Hidden-decision candidates, ranked most consequential first (L5). Only
+   * the top one is persisted and streamed as the `callouts` event for now;
+   * the full list is kept for the E1–E5 slot phase.
    */
   callouts: z.array(LearnLaterCalloutSchema).optional(),
+});
+
+export const TaskRouterResultSchema = z.object({
+  kind: z.literal("task"),
+  ...RouterCommon,
+  /**
+   * Hidden decisions behind the work product (L5, L8), ranked most
+   * consequential first, like lookup callouts.
+   */
+  callouts: z.array(LearnLaterCalloutSchema).optional(),
+  /**
+   * "Why this happened" card (L8): set only when the task stems from a real
+   * misconception (e.g. leakage, perfect separation), never for a typo or an
+   * environment problem. When present it is THE saved item (L5), ahead of `callouts`.
+   */
+  whyCallout: LearnLaterCalloutSchema.nullable(),
 });
 
 export const RouterResultSchema = z.discriminatedUnion("kind", [
   ConceptRouterResultSchema,
   LookupRouterResultSchema,
+  TaskRouterResultSchema,
 ]);
 
 // ─── Assessor (A3) ──────────────────────────────────────────────────────────

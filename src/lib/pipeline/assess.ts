@@ -182,8 +182,8 @@ function readEvidence<T>(json: unknown, schema: { safeParse: (v: unknown) => { s
 
 /**
  * P7 (engagement-based concept creation): only an answered framing exchange
- * may add a NEW concept to the learner's profile. Lookup, skip and dig-in
- * exchanges only update concepts the learner already has.
+ * may add a NEW concept to the learner's profile. Lookup, task, direct, skip and
+ * dig-in exchanges only update concepts the learner already has.
  */
 export function canCreateMastery(mode: AnswerMode): boolean {
   return mode === "framing";

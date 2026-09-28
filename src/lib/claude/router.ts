@@ -5,6 +5,7 @@ import "server-only";
 import { FRAMING, MODELS } from "@/config";
 import { callStructured } from "@/lib/claude/client";
 import { formatLearner, ROUTER_SYSTEM, routerUserPrompt, type LearnerSnapshot, type PromptTurn } from "@/lib/claude/prompts";
+import { asksForDeliverable } from "@/lib/pipeline/route-policy";
 import { RouterResultSchema } from "@/lib/schemas";
 import type { FramingQuestion, LearnLaterCallout, RouterResult } from "@/lib/types";
 
@@ -24,7 +25,7 @@ export const CALLOUT_JSON = {
 export const ROUTER_JSON_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
-    kind: { type: "string", enum: ["concept", "lookup"] },
+    kind: { type: "string", enum: ["concept", "lookup", "task"] },
     rationale: { type: "string" },
     conceptSlugs: { type: "array", items: { type: "string" } },
     framingQuestions: {
@@ -42,8 +43,9 @@ export const ROUTER_JSON_SCHEMA: Record<string, unknown> = {
     },
     skipCallout: { anyOf: [CALLOUT_JSON, { type: "null" }] },
     callouts: { type: "array", items: CALLOUT_JSON },
+    whyCallout: { anyOf: [CALLOUT_JSON, { type: "null" }] },
   },
-  required: ["kind", "rationale", "conceptSlugs", "framingQuestions", "skipCallout", "callouts"],
+  required: ["kind", "rationale", "conceptSlugs", "framingQuestions", "skipCallout", "callouts", "whyCallout"],
   additionalProperties: false,
 };
 
@@ -60,6 +62,7 @@ interface RawRouter {
   framingQuestions?: { prompt?: unknown; format?: unknown; options?: unknown }[];
   skipCallout?: RawCallout | null;
   callouts?: RawCallout[];
+  whyCallout?: RawCallout | null;
 }
 
 export function toSlug(s: string): string {
@@ -82,6 +85,12 @@ export function normalizeCallout(raw: RawCallout | null | undefined): LearnLater
   if (!title || !preview || !appliedContext) return null;
   const slug = toSlug(str(raw.conceptSlug));
   return { title, preview, appliedContext, ...(slug ? { conceptSlug: slug } : {}) };
+}
+
+/** Same concept (by slug) or same title — the R13 dedupe would merge them anyway. */
+function sameCallout(a: LearnLaterCallout, b: LearnLaterCallout): boolean {
+  if (a.conceptSlug && b.conceptSlug) return a.conceptSlug === b.conceptSlug;
+  return a.title.trim().toLowerCase() === b.title.trim().toLowerCase();
 }
 
 export function normalizeQuestions(raw: RawRouter["framingQuestions"]): FramingQuestion[] {
@@ -107,14 +116,31 @@ export function normalizeQuestions(raw: RawRouter["framingQuestions"]): FramingQ
   return out;
 }
 
-/** Flat model output → RouterResult (throws if unusable). Exported for tests. */
-export function normalizeRouterOutput(raw: unknown): RouterResult {
+/** At most this many ranked hidden-decision callouts are kept on the result. */
+export const MAX_CALLOUTS = 2;
+
+/**
+ * Flat model output → RouterResult (throws if unusable). Exported for tests.
+ * `message` (the user message) is only used to pick the fallback kind when a
+ * concept result has no usable framing.
+ */
+export function normalizeRouterOutput(raw: unknown, message = ""): RouterResult {
   const r = (raw ?? {}) as RawRouter;
   const conceptSlugs = [
     ...new Set((Array.isArray(r.conceptSlugs) ? r.conceptSlugs : []).map((s) => toSlug(str(s))).filter(Boolean)),
   ].slice(0, 3);
   const rationale = str(r.rationale);
-  const callouts = (r.callouts ?? []).map(normalizeCallout).filter((c): c is LearnLaterCallout => !!c).slice(0, 2);
+  const allCallouts = (r.callouts ?? []).map(normalizeCallout).filter((c): c is LearnLaterCallout => !!c);
+  /** Ranked callouts, minus anything that repeats `lead` (or each other), capped. */
+  const ranked = (lead: LearnLaterCallout | null) => {
+    const out: LearnLaterCallout[] = [];
+    for (const c of allCallouts) {
+      if (lead && sameCallout(c, lead)) continue;
+      if (out.some((o) => sameCallout(o, c))) continue;
+      out.push(c);
+    }
+    return out.slice(0, MAX_CALLOUTS);
+  };
 
   if (r.kind === "concept") {
     const framingQuestions = normalizeQuestions(r.framingQuestions);
@@ -122,16 +148,24 @@ export function normalizeRouterOutput(raw: unknown): RouterResult {
     if (framingQuestions.length >= FRAMING.minQuestions && skipCallout) {
       return RouterResultSchema.parse({ kind: "concept", conceptSlugs, rationale, framingQuestions, skipCallout });
     }
-    // Unusable framing → degrade to a lookup so the user still gets an answer.
-    return RouterResultSchema.parse({
-      kind: "lookup",
-      conceptSlugs,
-      rationale: `${rationale} [degraded: no usable framing]`,
-      callouts: skipCallout ? [skipCallout] : callouts,
-    });
+    // Unusable framing → answer now so the user still gets an answer: a task
+    // if the message asks for a deliverable, else a lookup. The skipCallout
+    // (if any) leads the ranked callouts.
+    const callouts = skipCallout ? [skipCallout, ...ranked(skipCallout)] : ranked(null);
+    const degraded = `${rationale} [degraded: no usable framing]`;
+    return RouterResultSchema.parse(
+      asksForDeliverable(message)
+        ? { kind: "task", conceptSlugs, rationale: degraded, callouts, whyCallout: null }
+        : { kind: "lookup", conceptSlugs, rationale: degraded, callouts },
+    );
   }
   if (r.kind === "lookup") {
-    return RouterResultSchema.parse({ kind: "lookup", conceptSlugs, rationale, callouts });
+    return RouterResultSchema.parse({ kind: "lookup", conceptSlugs, rationale, callouts: ranked(null) });
+  }
+  if (r.kind === "task") {
+    const whyCallout = normalizeCallout(r.whyCallout);
+    // Drop hidden-decision callouts that repeat the why card BEFORE capping.
+    return RouterResultSchema.parse({ kind: "task", conceptSlugs, rationale, callouts: ranked(whyCallout), whyCallout });
   }
   throw new Error("router: missing kind");
 }
@@ -172,7 +206,7 @@ export async function routeMessage(input: RouteInput, signal?: AbortSignal): Pro
         },
       ],
       jsonSchema: ROUTER_JSON_SCHEMA,
-      parse: normalizeRouterOutput,
+      parse: (raw) => normalizeRouterOutput(raw, input.message),
       signal: callSignal,
     });
   } catch (err) {

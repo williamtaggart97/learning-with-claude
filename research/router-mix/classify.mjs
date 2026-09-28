@@ -2,7 +2,9 @@
 // (ROUTER_SYSTEM + ROUTER_JSON_SCHEMA from the app worktree) as a brand-new
 // learner, then tallies router kind against the hand-labelled intent.
 //
-// Usage: node research/router-mix/classify.mjs [path-to-app-checkout]
+// Usage: node research/router-mix/classify.mjs [path-to-app-checkout] [out-file]
+//   out-file defaults to results-three-way.json (results.json holds the
+//   original two-way baseline run and is kept for comparison).
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -54,7 +56,7 @@ const CALLOUT = {
 const SCHEMA = {
   type: "object",
   properties: {
-    kind: { type: "string", enum: ["concept", "lookup"] },
+    kind: { type: "string", enum: ["concept", "lookup", "task"] },
     rationale: { type: "string" },
     conceptSlugs: { type: "array", items: { type: "string" } },
     framingQuestions: {
@@ -72,8 +74,9 @@ const SCHEMA = {
     },
     skipCallout: { anyOf: [CALLOUT, { type: "null" }] },
     callouts: { type: "array", items: CALLOUT },
+    whyCallout: { anyOf: [CALLOUT, { type: "null" }] },
   },
-  required: ["kind", "rationale", "conceptSlugs", "framingQuestions", "skipCallout", "callouts"],
+  required: ["kind", "rationale", "conceptSlugs", "framingQuestions", "skipCallout", "callouts", "whyCallout"],
   additionalProperties: false,
 };
 
@@ -96,7 +99,9 @@ ${message}
 Classify the new message and produce the JSON.`;
 
 const client = new Anthropic({ maxRetries: 3 });
-const prompts = JSON.parse(fs.readFileSync(path.join(here, "prompts.json"), "utf8"));
+// IDS=11,29,75 limits the run to those prompt ids (quick spot checks).
+const onlyIds = process.env.IDS ? new Set(process.env.IDS.split(",").map(Number)) : null;
+const prompts = JSON.parse(fs.readFileSync(path.join(here, "prompts.json"), "utf8")).filter((p) => !onlyIds || onlyIds.has(p.id));
 
 async function route(p) {
   const res = await client.messages.create({
@@ -115,6 +120,7 @@ async function route(p) {
     nQuestions: out.framingQuestions.length,
     nCallouts: out.callouts.length,
     calloutTitles: out.callouts.map((c) => c.title),
+    whyCallout: out.whyCallout?.title ?? null,
   };
 }
 
@@ -136,29 +142,48 @@ await Promise.all(
 );
 process.stderr.write("\n");
 results.sort((a, b) => a.id - b.id);
-fs.writeFileSync(path.join(here, "results.json"), JSON.stringify(results, null, 2));
+const outFile = path.resolve(here, process.argv[3] ?? "results-three-way.json");
+fs.writeFileSync(outFile, JSON.stringify(results, null, 2));
 
 // ── Report ──
 const pct = (n, d) => (d ? `${Math.round((100 * n) / d)}%` : "-");
 const count = (rows, k) => rows.filter((r) => r.kind === k).length;
-const ok = results.filter((r) => r.kind !== "error");
-console.log(`router model: ${routerModel}   prompts: ${results.length}   errors: ${results.length - ok.length}\n`);
-console.log(`OVERALL  concept ${count(ok, "concept")} (${pct(count(ok, "concept"), ok.length)})   lookup ${count(ok, "lookup")} (${pct(count(ok, "lookup"), ok.length)})\n`);
+const KINDS = ["concept", "lookup", "task"];
+const INTENTS = ["concept", "lookup", "task"];
 
-console.log("BY HAND-LABELLED INTENT");
-for (const intent of ["task", "lookup", "concept"]) {
-  const rows = ok.filter((r) => r.intent === intent);
-  const withCallouts = rows.filter((r) => r.kind === "lookup" && r.nCallouts > 0).length;
-  console.log(`  ${intent.padEnd(8)} n=${String(rows.length).padEnd(3)} -> concept ${pct(count(rows, "concept"), rows.length).padStart(4)}   lookup ${pct(count(rows, "lookup"), rows.length).padStart(4)}   (lookups with >=1 callout: ${withCallouts}/${count(rows, "lookup")})`);
+function matrix(label, rows) {
+  console.log(`${label}\n  ${"intent \ router".padEnd(18)}${KINDS.map((k) => k.padStart(10)).join("")}${"n".padStart(5)}`);
+  for (const intent of INTENTS) {
+    const r = rows.filter((x) => x.intent === intent);
+    console.log(`  ${intent.padEnd(18)}${KINDS.map((k) => `${count(r, k)} (${pct(count(r, k), r.length)})`.padStart(10)).join("")}${String(r.length).padStart(5)}`);
+  }
+  console.log("");
 }
+
+const ok = results.filter((r) => r.kind !== "error");
+console.log(`router model: ${routerModel}   prompts: ${results.length}   errors: ${results.length - ok.length}   -> ${path.relative(here, outFile)}\n`);
+const baselineFile = path.join(here, "results.json");
+if (fs.existsSync(baselineFile) && path.resolve(baselineFile) !== outFile) {
+  matrix("BEFORE (results.json, two-way router)", JSON.parse(fs.readFileSync(baselineFile, "utf8")).filter((r) => r.kind !== "error"));
+}
+matrix("AFTER (this run)", ok);
+
+console.log("CALLOUTS");
+for (const k of ["lookup", "task"]) {
+  const rows = ok.filter((r) => r.kind === k);
+  console.log(`  ${k.padEnd(7)} routed=${rows.length}  with >=1 callout: ${rows.filter((r) => r.nCallouts > 0).length}  with whyCallout: ${rows.filter((r) => r.whyCallout).length}`);
+}
+const debug = ok.filter((r) => r.bucket === "debug");
+console.log(`  debug bucket: whyCallout on ${debug.filter((r) => r.whyCallout).length}/${debug.length}`);
+for (const r of debug) console.log(`    #${r.id} [${r.kind}] why: ${r.whyCallout ?? "-"}`);
+
 console.log("\nBY BUCKET");
 for (const bucket of [...new Set(ok.map((r) => r.bucket))]) {
   const rows = ok.filter((r) => r.bucket === bucket);
-  console.log(`  ${bucket.padEnd(13)} n=${String(rows.length).padEnd(3)} concept ${pct(count(rows, "concept"), rows.length).padStart(4)}`);
+  console.log(`  ${bucket.padEnd(13)} n=${String(rows.length).padEnd(3)} ${KINDS.map((k) => `${k} ${pct(count(rows, k), rows.length).padStart(4)}`).join("   ")}`);
 }
-console.log("\nDISAGREEMENTS (intent concept/lookup vs router) and TASKS ROUTED TO CONCEPT");
+console.log("\nDISAGREEMENTS (intent != router kind; a task routed to lookup is acceptable, a framed task is not)");
 for (const r of ok) {
-  const mismatch = (r.intent === "concept" && r.kind !== "concept") || (r.intent === "lookup" && r.kind !== "lookup") || (r.intent === "task" && r.kind === "concept");
-  if (mismatch) console.log(`  #${r.id} [${r.intent}->${r.kind}] ${r.text.slice(0, 90)}\n      ${r.rationale}`);
+  if (r.intent !== r.kind) console.log(`  #${r.id} [${r.intent}->${r.kind}] ${r.text.slice(0, 90)}\n      ${r.rationale}`);
 }
 for (const r of results.filter((x) => x.kind === "error")) console.log(`  ERROR #${r.id}: ${r.rationale}`);

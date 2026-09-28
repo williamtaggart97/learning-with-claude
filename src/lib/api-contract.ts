@@ -31,8 +31,8 @@
  *     Stopping (client disconnect) keeps what was streamed, like claude.ai:
  *     if ≥1 answer_delta was sent, the partial text plus a trailing
  *     "\n\n_(Stopped.)_" is stored as the answer message (kind "answer", R5;
- *     callout items that already exist are attached, lookup callouts are
- *     not created) and the assessor does NOT run (R12). Stopped before any
+ *     callout items that already exist are attached, lookup/task callouts
+ *     are not created) and the assessor does NOT run (R12). Stopped before any
  *     delta: the framing-answer route stores an answer message containing
  *     just "_(Stopped before Claude answered.)_" (R10); POST /api/chat keeps
  *     only the user message. The UI shows its local partial text on stop and
@@ -68,15 +68,39 @@
  *       d. If the conversation has a `pending` FramingExchange, mark it
  *          `skipped` (abandoned: its skipCallout is NOT queued; it doesn't
  *          count toward progress).
- *       e. Store the user message (R5), then run the router (A1).
+ *       e. Store the user message (R5), then run the router (A1): kind
+ *          concept | lookup | task (L4).
+ *       f. Framing policy, enforced in code after the router (planRoute in
+ *          src/lib/pipeline/route-policy.ts), deadline checked first:
+ *          - a concept result whose message mentions a deadline (L4) is
+ *            answered immediately in "direct" answer mode (a concise, complete
+ *            concept answer; the route stays lookup-shaped) — or in "task"
+ *            mode if the message asks for a deliverable. Saved item: the
+ *            skipCallout.
+ *          - a concept result sharing a conceptSlug with ANY FramingExchange
+ *            already in this conversation (L9, framing once per topic) becomes
+ *            a lookup. If any matching exchange was `answered`, nothing is
+ *            saved (the user just worked through it); otherwise the
+ *            skipCallout is the saved item.
+ *          Downgrades are logged with the matched slugs.
  *     Concept path:  conversation → framing
  *       Create the assistant message (kind "framing", data { exchangeId },
  *       content may be "") and the FramingExchange (questions, conceptSlugs,
  *       skipCallout from the router). The stream ends; the UI shows the card
  *       and later calls the framing-answer route.
  *     Lookup path:   conversation → answer_delta… → callouts? → done
- *       Persist the answer message and its callout items (R13) first, then
- *       emit `callouts` (persisted LearnLaterItemDTOs), then `done`.
+ *       Persist the answer message and its ONE Learn It Later item (R13,
+ *       L5) first, then emit `callouts` (a one-item list of the persisted
+ *       LearnLaterItemDTO), then `done`. The saved item is the router's
+ *       top-ranked callout; the full ranked list stays on the router result
+ *       (not persisted) for the later E1–E5 slot phase. Deadline-downgraded
+ *       concepts use this path with the "direct" answer mode.
+ *     Task path (L8): conversation → answer_delta… → callouts? → done
+ *       Same stream and persistence as the lookup path; the answerer runs in
+ *       "task" mode (work product first). The one saved item (origin
+ *       "flagged") is the router's whyCallout if present, else its
+ *       top-ranked hidden-decision callout. Clients need no task-specific
+ *       handling.
  * R9  Dig-in kickoff: detected SERVER-SIDE — conversation.origin = "dig_in"
  *     and it has zero assistant messages (ChatRequest has no flag). The route
  *     stores the user message, skips the rate limit and the router, and goes
@@ -135,9 +159,9 @@
  *
  * ── Assessor (A3) and profile refresh ────────────────────────────────────────
  *
- * R12 After an answer (lookup, framing answer, skip or dig-in), the route runs
- *     the assessor via `after()` from "next/server" (runs after the response
- *     finishes and survives on Vercel; register it in the handler and have the
+ * R12 After an answer (lookup, task, direct, framing answer, skip or
+ *     dig-in), the route runs the assessor via `after()` from "next/server"
+ *     (runs after the response finishes and survives on Vercel; register it in the handler and have the
  *     callback await the stream's outcome, skipping on error). It never delays
  *     `done`. When it finishes it sets User.lastAssessedAt (even if nothing
  *     changed); it typically lands ~4–6s after `done`. It does not run for a
@@ -153,7 +177,7 @@
  *
  * ── Learn It Later ───────────────────────────────────────────────────────────
  *
- * R13 Creating items (lookup callouts, skip callouts, assessor items) is an
+ * R13 Creating items (lookup/task callouts, skip callouts, assessor items) is an
  *     upsert-by-rule: if a `queued` item already exists for the same
  *     (userId, conceptId) — or, when the item has no concept, the same
  *     (userId, normalizeLearnLaterTitle(title)) — reuse it instead of creating
