@@ -72,6 +72,44 @@ export function asksForDeliverable(message: string): boolean {
   return DELIVERABLE_RE.test(message.trim());
 }
 
+/**
+ * The message reports a problem with the user's OWN work: an error, warning,
+ * failure, or a result that looks wrong. A task's whyCallout ("why this
+ * happened", L8) only makes sense then; a plain request to write code or prose
+ * (e.g. an email to an advisor) never gets one, even if the router attached
+ * a card to it. Broad on purpose: a false positive keeps a router-chosen card,
+ * a false negative drops a real learning moment.
+ */
+const PROBLEM_RE = new RegExp(
+  [
+    // errors, warnings, failures
+    String.raw`\b(?:errors?|exceptions?|traceback|stack\s*trace|warnings?|fails?|failed|failing|failure|crash(?:es|ed|ing)?|bugs?|buggy|broke|broken|breaks)\b`,
+    String.raw`\b(?:does\s*not|doesn['’]?t|do\s+not|don['’]?t|did\s+not|didn['’]?t|is\s+not|isn['’]?t|won['’]?t|can['’]?t|cannot|never)\s+(?:work|run|converge|fit|compile|match|load|finish)\b`,
+    String.raw`\bnot\s+(?:working|converging|running|matching|fitting)\b`,
+    // something looks wrong
+    String.raw`\b(?:wrong|weird|strange|odd|unexpected(?:ly)?|surprising(?:ly)?|suspicious(?:ly)?|incorrect|impossible|nonsensical|garbage)\b`,
+    String.raw`\btoo\s+(?:good|high|low|big|small|large|perfect)\b`,
+    String.raw`\b(?:huge|enormous|massive|tiny|infinite|exploding|exploded)\s+(?:standard\s+errors?|ses?|coefficients?|estimates?|variance|values?|loss|gradients?|odds\s+ratios?)\b`,
+    // NaN / Inf showing up in output ("NaN in my output", "getting NaNs")
+    String.raw`\b(?:nans?|inf)\b`,
+    // Failure modes, only in failure/verb forms. Bare topic nouns (leakage,
+    // separation, multicollinearity, convergence, null values) are NOT here:
+    // "write a convergence check" or "handle null values" is a plain request.
+    String.raw`\b(?:singular(?:ity)?|diverg(?:ent|ence|ences|es|ing)|overfit(?:s|ted|ting)?|flipped|flips|reversed|drops?\s+(?:to|when|on)|tank(?:s|ed)?|falls?\s+apart)\b`,
+    String.raw`\bperfect(?:ly)?\s+separat(?:ion|ed)\b`,
+    // "why is my …", "what's wrong", "keeps giving …", "I'm getting …"
+    String.raw`\bwhy\s+(?:is|are|does|do|did|would|has|have)\s+(?:my|the|this|these|it)\b`,
+    String.raw`\bwhat['’]?s\s+wrong\b`,
+    String.raw`\b(?:keeps?|kept)\s+(?:getting|giving|returning|throwing|failing)\b`,
+    String.raw`\b(?:i['’]?m|i\s+am|we['’]?re|we\s+are|i\s+keep|still)\s+getting\b`,
+  ].join("|"),
+  "i",
+);
+
+export function reportsProblem(message: string): boolean {
+  return PROBLEM_RE.test(message);
+}
+
 // ─── Framing policy ─────────────────────────────────────────────────────────
 
 /** How an immediate (non-framed) answer is written. See MODE_INSTRUCTIONS. */
@@ -92,8 +130,32 @@ export interface RoutePlan {
   downgraded: FramingDowngrade | null;
   /** Concept slugs that triggered the downgrade (for logs). */
   matchedSlugs: string[];
-  /** The ONE Learn It Later item to persist and stream (L5). Empty for concept. */
+  /**
+   * The router's top item (why card, else rank 1) — the deterministic
+   * featured item. Kept for logs/tests; the chat pipeline features an item
+   * via the E2 draw over `candidates` instead. Empty for concept.
+   */
   persist: LearnLaterCallout[];
+  /** Hidden-decision candidates for the end-of-answer slot (E2). Empty for concept. */
+  candidates: SlotCandidates;
+  /** True when a task's whyCallout was dropped because the message reports no problem. */
+  droppedWhy: boolean;
+}
+
+/** Input to the E2 featured-item draw (src/lib/slot/policy.ts). */
+export interface SlotCandidates {
+  /** A task's "why this happened" card: always featured when present (L8). */
+  why: LearnLaterCallout | null;
+  /** Ranked hidden-decision candidates, most consequential first (≤ 3). */
+  ranked: LearnLaterCallout[];
+}
+
+const NO_CANDIDATES: SlotCandidates = { why: null, ranked: [] };
+
+/** Slot candidates for an immediate-answer route. */
+export function slotCandidates(route: RouterResult): SlotCandidates {
+  if (route.kind === "concept") return NO_CANDIDATES;
+  return { why: route.kind === "task" ? route.whyCallout : null, ranked: route.callouts ?? [] };
 }
 
 /**
@@ -114,7 +176,22 @@ export function planRoute(
   ctx: { message: string; earlier: EarlierExchange[] },
 ): RoutePlan {
   if (route.kind !== "concept") {
-    return { route, answerMode: route.kind, downgraded: null, matchedSlugs: [], persist: featuredCallouts(route) };
+    let next = route;
+    let droppedWhy = false;
+    // whyCallout guard: only for messages that report a problem with their own work.
+    if (route.kind === "task" && route.whyCallout && !reportsProblem(ctx.message)) {
+      next = { ...route, whyCallout: null, rationale: `${route.rationale} [whyCallout dropped: no problem reported]` };
+      droppedWhy = true;
+    }
+    return {
+      route: next,
+      answerMode: next.kind,
+      downgraded: null,
+      matchedSlugs: [],
+      persist: featuredCallouts(next),
+      candidates: slotCandidates(next),
+      droppedWhy,
+    };
   }
 
   if (mentionsDeadline(ctx.message)) {
@@ -129,6 +206,8 @@ export function planRoute(
       downgraded: "deadline",
       matchedSlugs: route.conceptSlugs,
       persist: featuredCallouts(next),
+      candidates: slotCandidates(next),
+      droppedWhy: false,
     };
   }
 
@@ -143,16 +222,24 @@ export function planRoute(
       rationale: `${route.rationale} [downgraded: already framed${answered ? ", answered" : ""}]`,
       callouts: answered ? [] : [route.skipCallout],
     };
-    return { route: next, answerMode: "lookup", downgraded: "already_framed", matchedSlugs, persist: featuredCallouts(next) };
+    return {
+      route: next,
+      answerMode: "lookup",
+      downgraded: "already_framed",
+      matchedSlugs,
+      persist: featuredCallouts(next),
+      candidates: slotCandidates(next),
+      droppedWhy: false,
+    };
   }
 
-  return { route, answerMode: null, downgraded: null, matchedSlugs: [], persist: [] };
+  return { route, answerMode: null, downgraded: null, matchedSlugs: [], persist: [], candidates: NO_CANDIDATES, droppedWhy: false };
 }
 
 /**
- * L5 (until the E1–E5 slot experiment): an immediate answer saves ONE Learn It
- * Later item — the task's whyCallout if present, else the top-ranked callout.
- * The full ranked list stays on the router result for the later slot phase.
+ * The router's own top pick: the task's whyCallout if present, else the
+ * top-ranked callout. The chat pipeline instead features an item via the E2
+ * draw (src/lib/slot/policy.ts), which picks this item most of the time.
  */
 export function featuredCallouts(route: RouterResult): LearnLaterCallout[] {
   if (route.kind === "concept") return [];

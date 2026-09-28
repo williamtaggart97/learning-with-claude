@@ -122,9 +122,9 @@ export const LookupRouterResultSchema = z.object({
   kind: z.literal("lookup"),
   ...RouterCommon,
   /**
-   * Hidden-decision candidates, ranked most consequential first (L5). Only
-   * the top one is persisted and streamed as the `callouts` event for now;
-   * the full list is kept for the E1–E5 slot phase.
+   * Hidden-decision candidates (up to 3), ranked most consequential first
+   * (L5, E2). The slot experiment features ONE of them and saves only that
+   * one (E3) — see src/lib/slot/policy.ts.
    */
   callouts: z.array(LearnLaterCalloutSchema).optional(),
 });
@@ -140,7 +140,9 @@ export const TaskRouterResultSchema = z.object({
   /**
    * "Why this happened" card (L8): set only when the task stems from a real
    * misconception (e.g. leakage, perfect separation), never for a typo or an
-   * environment problem. When present it is THE saved item (L5), ahead of `callouts`.
+   * environment problem, and only when the message reports a problem with
+   * the user's own work (also guarded in code by planRoute). When present it
+   * is always the featured, saved item (L5, L8) — never part of the E2 draw.
    */
   whyCallout: LearnLaterCalloutSchema.nullable(),
 });
@@ -210,6 +212,12 @@ export const MasteryEvidenceSchema = z.object({
   messageId: z.string().optional(),
   /** ISO-8601 timestamp */
   at: z.string(),
+  /**
+   * Where the evidence came from when it isn't the assessor. "quickcheck" =
+   * an end-of-answer quick check (R17); the E5 mastery metric excludes it so
+   * the quick-check arm doesn't get credit for its own measurement.
+   */
+  source: z.enum(["quickcheck"]).optional(),
 });
 
 /** LearningStyle.evidence[] */
@@ -274,4 +282,50 @@ export const PersonaSwitchRequestSchema = z.object({
 
 export const PasscodeRequestSchema = z.object({
   passcode: z.string().min(1).max(200),
+});
+
+// ─── End-of-answer slot (E1–E5) ─────────────────────────────────────────────
+
+/**
+ * POST /api/slot/[impressionId]/quickcheck — answer the one-question quick
+ * check (C). Exactly one of: selectedIndex (an option index) or dontKnow.
+ */
+export const QuickCheckAnswerRequestSchema = z
+  .object({
+    selectedIndex: z.number().int().min(0).max(9).nullable(),
+    dontKnow: z.boolean(),
+  })
+  .refine((r) => (r.dontKnow ? r.selectedIndex === null : r.selectedIndex !== null), {
+    message: "selectedIndex must be null when dontKnow is true, and set otherwise",
+  });
+
+/** Copy for the walk-through (B) / apply-it (D) boxes. */
+export const SlotCopySchema = z.object({
+  headline: z.string().min(1).max(160),
+  subline: z.string().min(1).max(200),
+  buttonLabel: z.string().min(1).max(40),
+});
+
+/** Quick check (C) as stored — correctIndex/explanation are server-only until answered. */
+export const QuickCheckPayloadSchema = z
+  .object({
+    prompt: z.string().min(1),
+    options: z.array(z.string().min(1)).min(2).max(4),
+    correctIndex: z.number().int().min(0),
+    /** One or two sentences on why the correct option is right. */
+    explanation: z.string().min(1),
+  })
+  .refine((q) => q.correctIndex < q.options.length, { message: "correctIndex out of range" });
+
+/** SlotImpression.payload */
+export const SlotPayloadSchema = z.object({
+  copy: SlotCopySchema.optional(),
+  quickcheck: QuickCheckPayloadSchema.optional(),
+});
+
+/** SlotImpression.quickcheckResponse */
+export const QuickCheckResponseSchema = z.object({
+  selectedIndex: z.number().int().nullable(),
+  dontKnow: z.boolean(),
+  correct: z.boolean(),
 });

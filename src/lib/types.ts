@@ -13,6 +13,8 @@ import type {
   LearnLaterStatus,
   MessageKind,
   MessageRole,
+  SlotEngagement,
+  SlotVariant,
 } from "@/generated/prisma/enums";
 import type {
   AssessedConceptSchema,
@@ -32,6 +34,7 @@ import type {
   PersonaKeySchema,
   PersonaSwitchRequestSchema,
   ProfilePatchSchema,
+  QuickCheckAnswerRequestSchema,
   RouterResultSchema,
   StyleEvidenceSchema,
   StyleSignalSchema,
@@ -54,7 +57,16 @@ export type EntryPoint = z.infer<typeof EntryPointSchema>;
 export type StyleDimension = "intuitionVsFormal" | "entryPoint" | "briefVsThorough";
 
 // Mirrors of the Prisma enums (single source: prisma/schema.prisma).
-export type { ConversationOrigin, FramingStatus, LearnLaterOrigin, LearnLaterStatus, MessageKind, MessageRole };
+export type {
+  ConversationOrigin,
+  FramingStatus,
+  LearnLaterOrigin,
+  LearnLaterStatus,
+  MessageKind,
+  MessageRole,
+  SlotEngagement,
+  SlotVariant,
+};
 
 // ─── Framing ────────────────────────────────────────────────────────────────
 
@@ -96,7 +108,20 @@ export interface AnswerMessageData {
   calloutItemIds?: string[];
 }
 
-export type StoredMessageData = FramingMessageData | AnswerMessageData;
+/**
+ * Stored Message.data for kind = "text" USER messages created by an
+ * end-of-answer slot action ("Walk me through it" / "Apply it", R16/R18)
+ * rather than typed by the user. The E5 guardrail ignores them (and the
+ * replies to them) when deciding whether the user followed up. Plain typed
+ * user messages store null.
+ */
+export interface SlotUserMessageData {
+  origin: "slot";
+  impressionId: string;
+  action: "walkthrough" | "apply";
+}
+
+export type StoredMessageData = FramingMessageData | AnswerMessageData | SlotUserMessageData;
 
 // ─── Tiers (P6/P7) ──────────────────────────────────────────────────────────
 
@@ -174,6 +199,16 @@ export interface AnswerMessageDTO extends MessageDTOBase {
   data: {
     /** Empty for concept answers and lookups without callouts. */
     callouts: LearnLaterItemDTO[];
+    /**
+     * The end-of-answer slot (E1), joined from SlotImpression by message id.
+     * Absent/null for answers without a slot (framing, skip, dig-in, apply,
+     * stopped answers, answers with no hidden decision, and every answer while
+     * the experiment is inactive). When present, the UI renders the slot
+     * INSTEAD of `callouts`: for card / walkthrough / quickcheck / apply,
+     * `callouts` holds the same item (backward compat); for "none" (control)
+     * `callouts` is EMPTY and nothing is rendered.
+     */
+    slot?: SlotDTO | null;
   };
 }
 
@@ -266,6 +301,76 @@ export interface ProfileDTO {
   lastAssessedAt: string | null;
 }
 
+// ─── End-of-answer slot (E1–E5) ─────────────────────────────────────────────
+
+/** Short copy for the walk-through (B) and apply-it (D) boxes. */
+export interface SlotCopy {
+  /** Bold first line, e.g. "Want to see why leakage inflates AUC this much?" */
+  headline: string;
+  /** Second line, e.g. "2 quick questions, now that the fix is in." */
+  subline: string;
+  /** Button text, e.g. "Walk me through it" / "Check my features". */
+  buttonLabel: string;
+}
+
+/** Outcome of a submitted quick check (C). */
+export interface QuickCheckResultDTO {
+  /** Index into `options`; null when dontKnow. */
+  selectedIndex: number | null;
+  dontKnow: boolean;
+  correct: boolean;
+  /** Revealed only after answering. */
+  correctIndex: number;
+  /** 1–3 sentences: confirms or corrects, then the one-line why. */
+  feedback: string;
+}
+
+interface SlotDTOBase {
+  /** SlotImpression id — the path segment for the /api/slot/[id]/* routes. */
+  impressionId: string;
+  /** The answer message this slot sits under. */
+  answerMessageId: string;
+  /** The featured hidden decision — ALWAYS already saved to Learn It Later (E3). */
+  item: LearnLaterItemDTO;
+  /** First engagement recorded for this slot (for history rendering). */
+  engagement: SlotEngagement | null;
+  engagedAt: string | null;
+}
+
+/**
+ * One end-of-answer box (E1), discriminated on `variant`. "none" is the
+ * control: render NOTHING (the item is still queued, E3).
+ */
+export type SlotDTO =
+  | (SlotDTOBase & {
+      variant: "card";
+      /** Set once "Dig in now" was used from this slot. */
+      digInConversationId: string | null;
+    })
+  | (SlotDTOBase & {
+      variant: "walkthrough";
+      copy: SlotCopy;
+      /** The framing exchange created by "Walk me through it", once clicked. */
+      exchangeId: string | null;
+    })
+  | (SlotDTOBase & {
+      variant: "quickcheck";
+      quickcheck: {
+        prompt: string;
+        /** 2–4 options. "I don't know" is NOT included — the UI always adds it. */
+        options: string[];
+        /** null until answered. */
+        result: QuickCheckResultDTO | null;
+      };
+    })
+  | (SlotDTOBase & {
+      variant: "apply";
+      copy: SlotCopy;
+      /** The apply-it answer message, once clicked. */
+      applyMessageId: string | null;
+    })
+  | (SlotDTOBase & { variant: "none" });
+
 // ─── API request bodies ─────────────────────────────────────────────────────
 
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
@@ -273,3 +378,4 @@ export type FramingAnswerRequest = z.infer<typeof FramingAnswerRequestSchema>;
 export type ProfilePatch = z.infer<typeof ProfilePatchSchema>;
 export type LearnLaterPatch = z.infer<typeof LearnLaterPatchSchema>;
 export type PersonaSwitchRequest = z.infer<typeof PersonaSwitchRequestSchema>;
+export type QuickCheckAnswerRequest = z.infer<typeof QuickCheckAnswerRequestSchema>;

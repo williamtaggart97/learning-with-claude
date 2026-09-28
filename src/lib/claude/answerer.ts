@@ -5,6 +5,7 @@ import { MODELS } from "@/config";
 import { streamText } from "@/lib/claude/client";
 import {
   answererSystem,
+  applyUserContent,
   digInUserContent,
   formatFramingQA,
   formatLearner,
@@ -30,6 +31,11 @@ export type AnswerInput = {
       /** Turns from the conversation the item came from (may be empty). */
       sourceTurns: PromptTurn[];
     }
+  | {
+      /** E1 variant D: apply the featured concept to the user's own project. */
+      mode: "apply";
+      item: { title: string; preview: string; appliedContext: string; conceptSlug: string | null };
+    }
 );
 
 const MAX_HISTORY_TURNS = 12;
@@ -45,6 +51,9 @@ export function buildAnswerRequest(input: AnswerInput): { system: string; messag
       break;
     case "dig_in":
       finalContent = digInUserContent({ kickoffMessage: input.message, item: input.item, sourceTurns: input.sourceTurns });
+      break;
+    case "apply":
+      finalContent = applyUserContent(input.message, input.item);
       break;
     default:
       finalContent = input.message;

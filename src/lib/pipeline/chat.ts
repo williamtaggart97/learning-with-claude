@@ -2,11 +2,12 @@
 import "server-only";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
+import { EXPERIMENT } from "@/config";
 import { apiError, type ChatStreamEvent } from "@/lib/api-contract";
 import { routeMessage } from "@/lib/claude/router";
 import type { LearnerSnapshot, PromptTurn } from "@/lib/claude/prompts";
 import { db, Prisma } from "@/lib/db";
-import { learnLaterItemToDTO, upsertLearnLaterItem, type LearnLaterItemWithConcept } from "@/lib/learn-later";
+import { learnLaterItemToDTO, upsertLearnLaterItem } from "@/lib/learn-later";
 import { ndjsonResponse } from "@/lib/ndjson";
 import { ASSESSMENT_MAX_WAIT_MS, createAssessmentGate, runAfterStream, type AssessmentGate } from "@/lib/pipeline/assess";
 import { loadCatalog, loadLearnerSnapshot, loadTurns } from "@/lib/pipeline/context";
@@ -15,8 +16,8 @@ import { planRoute } from "@/lib/pipeline/route-policy";
 import { answerAndPersist, linkedAbort, touchConversation } from "@/lib/pipeline/stream";
 import { ChatRequestSchema } from "@/lib/schemas";
 import { getSessionUser } from "@/lib/session";
-import type { FramingMessageData, AnswerMessageData } from "@/lib/types";
-
+import { createSlotImpression, devForcedVariant, resolveSlotContent, startSlot } from "@/lib/slot/service";
+import type { FramingMessageData, AnswerMessageData, SlotDTO, SlotVariant } from "@/lib/types";
 
 export async function handleChat(request: Request): Promise<Response> {
   try {
@@ -86,6 +87,7 @@ export async function handleChat(request: Request): Promise<Response> {
         digIn: digIn.digInAnswer ? existing : null,
         gate,
         requestSignal: request.signal,
+        forcedVariant: devForcedVariant(request),
       }),
     );
   } catch (err) {
@@ -124,6 +126,8 @@ interface ChatEventsInput {
   digIn: Awaited<ReturnType<typeof loadConversation>>;
   gate: AssessmentGate;
   requestSignal: AbortSignal;
+  /** Dev-only slot variant override (never set in production). */
+  forcedVariant: SlotVariant | null;
 }
 
 async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEvent> {
@@ -203,26 +207,55 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
       return;
     }
 
-    // ── Lookup / task / direct: answer now (L5, L8), then persist the ONE
-    // featured Learn It Later item (R13) and emit it.
+    // ── Lookup / task / direct: answer now (L5, L8).
+    // Experiment inactive (EXPERIMENT.active = false, the default until the
+    // slot UI ships): no draw, no impression, no `slot` event — the router's
+    // top item is saved and emitted via `callouts` exactly as before.
+    // Experiment active: the end-of-answer slot (E1–E5) is drawn up front so
+    // its payload is generated in parallel with the answer; the featured item
+    // is ALWAYS saved (E3) with the answer, then `callouts` (the same item,
+    // backward compat — omitted for the "none" control) and `slot` are
+    // emitted before `done`. A failed draw (startSlot → null) falls back to
+    // the inactive behaviour for this answer.
+    // E4 priority override: a lookup/task answer can't change the answered-
+    // framing count, and concept-count unlocks come from the assessor after
+    // `done`, so no tier unlock can coincide with this answer (unlocked: null
+    // — planSlot's unlock branch is dead code here, kept for future callers).
     const mode = plan.answerMode ?? "lookup";
-    const callouts = plan.persist;
+    const slotRun = EXPERIMENT.active
+      ? await startSlot({
+          conversationId,
+          candidates: plan.candidates,
+          learner,
+          message,
+          turns: history,
+          unlocked: null,
+          forcedVariant: input.forcedVariant,
+          signal: abort.signal,
+        })
+      : null;
     yield* answerAndPersist({
       answer: { mode, learner, history, message },
       signal: abort.signal,
       gate: input.gate,
-      persist: async (text, { incomplete }) =>
-        db.$transaction(async (tx) => {
-          const items: LearnLaterItemWithConcept[] = [];
-          // A stopped answer keeps only the text: its callouts were never shown.
-          for (const callout of incomplete ? [] : callouts) {
-            const { item } = await upsertLearnLaterItem(
-              { userId, callout, origin: "flagged", sourceConversationId: conversationId, sourceMessageId: userMessageId },
-              tx,
-            );
-            if (!items.some((i) => i.id === item.id)) items.push(item);
-          }
-          const data: AnswerMessageData | null = items.length ? { calloutItemIds: items.map((i) => i.id) } : null;
+      persist: async (text, { incomplete }) => {
+        // A stopped answer keeps only the text: its item and slot were never shown.
+        // Network wait happens BEFORE the transaction.
+        const resolved = !incomplete && slotRun ? await resolveSlotContent(slotRun) : null;
+        const featured = incomplete ? null : (slotRun?.plan.featured.callout ?? plan.persist[0] ?? null);
+        // Control arm: the item is saved (E3) but surfaced nowhere — no
+        // `callouts` event and no calloutItemIds, so history shows nothing either.
+        const surfaced = resolved?.variant !== "none";
+        return db.$transaction(async (tx) => {
+          const item = featured
+            ? (
+                await upsertLearnLaterItem(
+                  { userId, callout: featured, origin: "flagged", sourceConversationId: conversationId, sourceMessageId: userMessageId },
+                  tx,
+                )
+              ).item
+            : null;
+          const data: AnswerMessageData | null = item && surfaced ? { calloutItemIds: [item.id] } : null;
           const msg = await tx.message.create({
             data: {
               conversationId,
@@ -233,9 +266,23 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
             },
             select: { id: true },
           });
+          let slot: SlotDTO | null = null;
+          if (item && slotRun && resolved) {
+            slot = await createSlotImpression(tx, {
+              run: slotRun,
+              resolved,
+              userId,
+              conversationId,
+              userMessageId,
+              messageId: msg.id,
+              answerMode: mode,
+              item,
+            });
+          }
           await touchConversation(tx, conversationId);
-          return { messageId: msg.id, callouts: items.length ? items.map(learnLaterItemToDTO) : null };
-        }),
+          return { messageId: msg.id, callouts: item && surfaced ? [learnLaterItemToDTO(item)] : null, slot };
+        });
+      },
       job: (answerMessageId, text) => ({
         userId,
         conversationId,

@@ -10,6 +10,14 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) return fallback;
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  return fallback;
+}
+
 /** Claude model IDs (A4). Switch the answerer to Opus for a demo via ANSWERER_MODEL. */
 export const MODELS = {
   /** A1: router + framing questions, one structured-output call. */
@@ -18,6 +26,8 @@ export const MODELS = {
   answerer: process.env.ANSWERER_MODEL || "claude-sonnet-5",
   /** A3: background assessor, strict JSON. */
   assessor: process.env.ASSESSOR_MODEL || "claude-haiku-4-5-20251001",
+  /** E1: end-of-answer slot content (quick check, copy) and walk-through framing. */
+  slot: process.env.SLOT_MODEL || "claude-haiku-4-5-20251001",
 } as const;
 
 /** Soft unlock ladder (P6). Progress counts ANSWERED framing exchanges only (P7). */
@@ -91,3 +101,32 @@ export const TEMPLATE_DEMO_SESSION_ID = "template";
 
 /** Persona the app starts on when a session has none selected. */
 export const DEFAULT_PERSONA = "maya" as const;
+
+/**
+ * End-of-answer slot experiment (E1–E5). See src/lib/slot/policy.ts.
+ * - active: master switch (env EXPERIMENT_ACTIVE). While false (the default
+ *   until the slot UI ships) nothing is drawn or logged and no `slot` event is
+ *   sent: the featured item is saved and emitted via `callouts` exactly as
+ *   before, so no contaminated impressions are recorded before the UI can
+ *   render the slot. The UI phase flips the default to true.
+ * - topPickProbability: E2 — chance the router's rank-1 hidden decision is the
+ *   featured one; otherwise one of the lower-ranked candidates, uniformly.
+ * - weights: E1 — relative draw weights among the ELIGIBLE variants (equal to
+ *   start). A variant with weight 0 is never drawn.
+ * - enabled: per-variant kill switch (a disabled variant is never eligible).
+ * - sessionWindowMinutes: E5 — an engagement (or a follow-up message) within
+ *   this long after the impression counts as "in the same session". Also the
+ *   right-censoring cut-off for the guardrail.
+ * - contentWaitMs: how long, after the answer finished streaming, to wait for
+ *   the variant payload (quick check / copy) before falling back to the card.
+ *   Only walkthrough / quickcheck / apply draws wait, so their `done` can land
+ *   up to this much later than card / none (see R15).
+ */
+export const EXPERIMENT = {
+  active: envBool("EXPERIMENT_ACTIVE", false),
+  topPickProbability: 0.6,
+  weights: { card: 1, walkthrough: 1, quickcheck: 1, apply: 1, none: 1 },
+  enabled: { card: true, walkthrough: true, quickcheck: true, apply: true, none: true },
+  sessionWindowMinutes: 30,
+  contentWaitMs: 1500,
+} as const;

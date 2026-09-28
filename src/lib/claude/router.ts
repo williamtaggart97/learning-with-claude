@@ -116,8 +116,8 @@ export function normalizeQuestions(raw: RawRouter["framingQuestions"]): FramingQ
   return out;
 }
 
-/** At most this many ranked hidden-decision callouts are kept on the result. */
-export const MAX_CALLOUTS = 2;
+/** At most this many ranked hidden-decision candidates are kept on the result (E2). */
+export const MAX_CALLOUTS = 3;
 
 /**
  * Flat model output → RouterResult (throws if unusable). Exported for tests.

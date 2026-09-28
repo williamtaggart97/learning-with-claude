@@ -6,6 +6,7 @@ import "server-only";
 import { z } from "zod";
 import { db, Prisma } from "@/lib/db";
 import { FramingQuestionSchema, FramingResponseSchema, MasteryEvidenceSchema, StyleEvidenceSchema } from "@/lib/schemas";
+import { loadSlotDTOs } from "@/lib/slot/service";
 import type {
   ConceptDTO,
   ConversationDTO,
@@ -16,6 +17,7 @@ import type {
   LearningStyleDTO,
   MasteryEvidence,
   MessageDTO,
+  SlotDTO,
   StyleEvidence,
   UserContextDTO,
 } from "@/lib/types";
@@ -101,13 +103,15 @@ function exchangeIdOf(message: MessageRow): string | null {
 
 /**
  * One MessageDTO (R14). `exchangesById` must contain the conversation's
- * FramingExchanges; `itemsById` the LearnLaterItemDTOs referenced by answers.
+ * FramingExchanges; `itemsById` the LearnLaterItemDTOs referenced by answers;
+ * `slotsByMessageId` the end-of-answer slots (E1) of answer messages.
  * A framing message whose exchange is missing degrades to a text message.
  */
 export function toMessageDTO(
   m: MessageRow,
   exchangesById: Map<string, ExchangeRow>,
   itemsById: Map<string, LearnLaterItemDTO>,
+  slotsByMessageId: Map<string, SlotDTO> = new Map(),
 ): MessageDTO {
   const base = { id: m.id, content: m.content, createdAt: iso(m.createdAt) };
   if (m.kind === "framing") {
@@ -132,10 +136,17 @@ export function toMessageDTO(
     return { ...base, role: m.role, kind: "text", data: null };
   }
   if (m.kind === "answer") {
-    const callouts = calloutIdsOf(m)
-      .map((id) => itemsById.get(id))
-      .filter((x): x is LearnLaterItemDTO => !!x);
-    return { ...base, role: "assistant", kind: "answer", data: { callouts } };
+    const slot = slotsByMessageId.get(m.id) ?? null;
+    // Control arm ("none"): the featured item is queued (E3) but never shown
+    // under the answer. chat.ts stores no calloutItemIds for it; this is the
+    // belt to that braces.
+    const callouts =
+      slot?.variant === "none"
+        ? []
+        : calloutIdsOf(m)
+            .map((id) => itemsById.get(id))
+            .filter((x): x is LearnLaterItemDTO => !!x);
+    return { ...base, role: "assistant", kind: "answer", data: { callouts, slot } };
   }
   return { ...base, role: m.role, kind: "text", data: null };
 }
@@ -146,11 +157,12 @@ export function buildConversationDTO(
   messages: MessageRow[],
   exchanges: ExchangeRow[],
   items: LearnLaterItemDTO[],
+  slotsByMessageId: Map<string, SlotDTO> = new Map(),
 ): ConversationDTO {
   const exchangesById = new Map(exchanges.map((x) => [x.id, x]));
   const itemsById = new Map(items.map((i) => [i.id, i]));
   const sorted = [...messages].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
-  const dtos = sorted.map((m) => toMessageDTO(m, exchangesById, itemsById));
+  const dtos = sorted.map((m) => toMessageDTO(m, exchangesById, itemsById, slotsByMessageId));
   const last = dtos.at(-1);
   return {
     ...toConversationSummaryDTO(conversation),
@@ -171,8 +183,9 @@ export async function getConversationDTO(userId: string, conversationId: string)
   if (!conversation) return null;
   const { messages, framingExchanges, ...conv } = conversation;
   const calloutIds = [...new Set(messages.flatMap(calloutIdsOf))];
-  const items = await loadLearnLaterItemDTOs(userId, calloutIds);
-  return buildConversationDTO(conv, messages, framingExchanges, items);
+  const answerIds = messages.filter((m) => m.kind === "answer").map((m) => m.id);
+  const [items, slots] = await Promise.all([loadLearnLaterItemDTOs(userId, calloutIds), loadSlotDTOs(userId, answerIds)]);
+  return buildConversationDTO(conv, messages, framingExchanges, items, slots);
 }
 
 /** Sidebar list, newest first (updatedAt desc — R5 keeps it fresh). */

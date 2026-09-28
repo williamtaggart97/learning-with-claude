@@ -176,7 +176,7 @@ test("lookup and task results pass through; only the featured item is persisted"
     callouts: [callout("A", "a"), callout("B", "b")],
     whyCallout: callout("Why", "why"),
   };
-  const t = planRoute(task, { message: "by Friday", earlier: [{ conceptSlugs: ["bessel-correction"], status: "answered" }] });
+  const t = planRoute(task, { message: "my glmer throws a convergence warning, need it by Friday", earlier: [{ conceptSlugs: ["bessel-correction"], status: "answered" }] });
   assert.equal(t.route, task);
   assert.equal(t.answerMode, "task");
   assert.equal(t.downgraded, null);

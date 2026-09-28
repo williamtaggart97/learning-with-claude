@@ -1,4 +1,4 @@
-// Shared streaming step: answer → answer_delta… → persist → callouts? → done.
+// Shared streaming step: answer → answer_delta… → persist → callouts? → slot? → done.
 // Server-only.
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
@@ -8,7 +8,7 @@ import { ClaudeOutputError } from "@/lib/claude/client";
 import { db, type Prisma } from "@/lib/db";
 import { PublicError } from "@/lib/ndjson";
 import type { AssessmentGate, AssessmentJob } from "@/lib/pipeline/assess";
-import type { LearnLaterItemDTO, TierInputs } from "@/lib/types";
+import type { LearnLaterItemDTO, SlotDTO, TierInputs } from "@/lib/types";
 
 /** Appended to a partial answer the user stopped (client disconnect), like claude.ai. */
 export const STOPPED_NOTE = "\n\n_(Stopped.)_";
@@ -34,7 +34,10 @@ export interface AnswerStreamOptions {
    * (null = no callouts event). For an incomplete answer (meta.incomplete)
    * only attach callout items that already exist; the result is never emitted.
    */
-  persist: (text: string, meta: PersistMeta) => Promise<{ messageId: string; callouts: LearnLaterItemDTO[] | null }>;
+  persist: (
+    text: string,
+    meta: PersistMeta,
+  ) => Promise<{ messageId: string; callouts: LearnLaterItemDTO[] | null; slot?: SlotDTO | null }>;
   /**
    * On an upstream failure after ≥1 delta, also persist the partial text +
    * ERROR_NOTE (before the `error` event). Default false: nothing is stored.
@@ -75,9 +78,10 @@ export async function* answerAndPersist(opts: AnswerStreamOptions): AsyncGenerat
     if (opts.signal.aborted) return; // upstream ended quietly after an abort: treat as stopped
     state = "complete";
     if (!text.trim()) throw new PublicError("Claude returned an empty answer — please try again.");
-    const { messageId, callouts } = await opts.persist(text, { incomplete: false });
+    const { messageId, callouts, slot } = await opts.persist(text, { incomplete: false });
     opts.gate.resolve(opts.job(messageId, text));
     if (callouts) yield { type: "callouts", items: callouts };
+    if (slot) yield { type: "slot", slot };
     yield { type: "done", messageId };
   } finally {
     opts.gate.cancel(); // no-op if already resolved; a stopped answer is never assessed

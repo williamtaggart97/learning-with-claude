@@ -33,7 +33,8 @@ export interface AssessmentJob {
   skipCallout?: LearnLaterCallout | null;
 }
 
-const MAX_MASTERY_EVIDENCE = 30;
+/** ConceptMastery.evidence keeps the newest this-many entries (read by the E5 mastery metric). */
+export const MAX_MASTERY_EVIDENCE = 30;
 const MAX_STYLE_EVIDENCE = 40;
 const MAX_CONTEXT_ITEMS = 10;
 const ASSESSOR_TIMEOUT_MS = 60_000;
@@ -150,7 +151,12 @@ export async function persistAssessment(job: AssessmentJob, result: AssessorResu
 
 type Tx = Prisma.TransactionClient;
 
-async function withRowTx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+/**
+ * Run one short SERIALIZABLE read-modify-write, retrying serialization
+ * conflicts (P2034 / "could not serialize" / deadlock) and unique races
+ * (P2002). Exported for the quick-check mastery update (R17).
+ */
+export async function withRowTx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await db.$transaction(fn, {
@@ -198,6 +204,7 @@ export async function applyConcept(
   job: AssessmentJob,
   c: AssessorResult["concepts"][number],
   at: string,
+  opts: { source?: MasteryEvidence["source"] } = {},
 ): Promise<"created" | "updated" | "ignored"> {
   let concept = await tx.concept.findUnique({ where: { slug: c.slug }, select: { id: true, domain: true } });
   const existing = concept
@@ -227,7 +234,13 @@ export async function applyConcept(
 
   const before = existing?.score ?? NEW_CONCEPT_BASELINE;
   const after = round3(clamp(before + c.masteryDelta, 0, 1));
-  const entry: MasteryEvidence = { note: c.evidence, delta: round3(after - before), messageId: job.userMessageId, at };
+  const entry: MasteryEvidence = {
+    note: c.evidence,
+    delta: round3(after - before),
+    messageId: job.userMessageId,
+    at,
+    ...(opts.source ? { source: opts.source } : {}),
+  };
   const evidence = [...readEvidence<MasteryEvidence>(existing?.evidence, MasteryEvidenceSchema), entry].slice(
     -MAX_MASTERY_EVIDENCE,
   );
@@ -332,15 +345,54 @@ async function applyStyleSignals(tx: Tx, job: AssessmentJob, signals: StyleSigna
   });
 }
 
-/** Append new items (case-insensitive dedupe), capped. Exported for tests. */
+/** Lowercase, strip accents/punctuation, collapse whitespace (context dedupe key). */
+export function normalizeContextEntry(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Token-overlap threshold above which two context entries are the same thing. */
+export const CONTEXT_DUPLICATE_JACCARD = 0.6;
+
+/**
+ * Two context entries (projects / data types) describe the same thing when,
+ * after normalizeContextEntry, they're equal, one contains the other on word
+ * boundaries (e.g. "Capstone: predicting monthly churn" vs "capstone —
+ * predicting monthly churn for a telecom"), or their word sets overlap with
+ * Jaccard ≥ CONTEXT_DUPLICATE_JACCARD. Containment needs the shorter entry to
+ * have ≥ 4 characters so a stray "r" or "ml" doesn't swallow everything.
+ */
+export function isNearDuplicateEntry(a: string, b: string): boolean {
+  const x = normalizeContextEntry(a);
+  const y = normalizeContextEntry(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  if (short.length >= 4 && ` ${long} `.includes(` ${short} `)) return true;
+  const tx = new Set(x.split(" "));
+  const ty = new Set(y.split(" "));
+  let inter = 0;
+  for (const t of tx) if (ty.has(t)) inter++;
+  const union = tx.size + ty.size - inter;
+  return union > 0 && inter / union >= CONTEXT_DUPLICATE_JACCARD;
+}
+
+/**
+ * Append new items, skipping near-duplicates of anything already present
+ * (existing entries win — they may be user-edited), capped. Exported for tests.
+ */
 export function mergeList(existing: string[], incoming: string[] | undefined): string[] {
   const out = [...existing];
-  const seen = new Set(existing.map((s) => s.trim().toLowerCase()));
-  for (const item of incoming ?? []) {
-    const key = item.trim().toLowerCase();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(item.trim());
+  for (const raw of incoming ?? []) {
+    const item = raw.trim().replace(/\s+/g, " ");
+    if (!normalizeContextEntry(item)) continue;
+    if (out.some((e) => isNearDuplicateEntry(e, item))) continue;
+    out.push(item);
   }
   return out.slice(0, MAX_CONTEXT_ITEMS);
 }

@@ -10,7 +10,9 @@
 //
 // Ownership model: every per-user row hangs off `User` with onDelete: Cascade,
 // so a persona reset is "delete the session clone User, re-copy the template".
-// `Concept` is a shared catalog and is never deleted by a reset.
+// `Concept` is a shared catalog and is never deleted by a reset. Exception:
+// `SlotImpression` (experiment data) uses SetNull foreign keys plus snapshot
+// id columns, so it survives persona resets.
 
 generator client {
   provider = "prisma-client"
@@ -77,6 +79,24 @@ enum PersonaKey {
   sam
 }
 
+/// End-of-answer slot variants (E1): A card · B walkthrough · C quickcheck ·
+/// D apply · E none (control).
+enum SlotVariant {
+  card
+  walkthrough
+  quickcheck
+  apply
+  none
+}
+
+/// The first engagement recorded on a slot impression (E5 primary metric).
+enum SlotEngagement {
+  dig_in
+  walkthrough_started
+  quickcheck_answered
+  apply_clicked
+}
+
 // ─── Users & personas ───────────────────────────────────────────────────────
 
 /// Template rows (isTemplate = true, demoSessionId = "template" — the
@@ -103,6 +123,7 @@ model User {
   learningStyle    LearningStyle?
   userContext      UserContext?
   learnLaterItems  LearnLaterItem[]
+  slotImpressions  SlotImpression[]
 
   @@unique([demoSessionId, personaKey])
   @@index([isTemplate, personaKey])
@@ -126,6 +147,7 @@ model Conversation {
   framingExchanges FramingExchange[]
   /// Learn It Later items that originated in this conversation.
   sourcedItems     LearnLaterItem[]  @relation("LearnLaterSourceConversation")
+  slotImpressions  SlotImpression[]
 
   @@index([userId, updatedAt])
   @@index([learnLaterItemId])
@@ -142,11 +164,13 @@ model Message {
   data           Json?
   createdAt      DateTime    @default(now())
 
-  conversation         Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  triggeredFraming     FramingExchange? @relation("FramingUserMessage")
-  framingForMessage    FramingExchange? @relation("FramingQuestionsMessage")
-  answeredFraming      FramingExchange? @relation("FramingAnswerMessage")
-  sourcedLearnLater    LearnLaterItem[] @relation("LearnLaterSourceMessage")
+  conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  triggeredFraming  FramingExchange? @relation("FramingUserMessage")
+  framingForMessage FramingExchange? @relation("FramingQuestionsMessage")
+  answeredFraming   FramingExchange? @relation("FramingAnswerMessage")
+  sourcedLearnLater LearnLaterItem[] @relation("LearnLaterSourceMessage")
+  /// Set on answer messages that ended with an end-of-answer slot (E1).
+  slotImpression    SlotImpression?
 
   @@index([conversationId, createdAt])
 }
@@ -280,16 +304,121 @@ model LearnLaterItem {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
-  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  concept            Concept?       @relation(fields: [conceptId], references: [id], onDelete: SetNull)
-  sourceConversation Conversation?  @relation("LearnLaterSourceConversation", fields: [sourceConversationId], references: [id], onDelete: SetNull)
-  sourceMessage      Message?       @relation("LearnLaterSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
-  digInConversations Conversation[] @relation("DigInConversations")
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  concept            Concept?         @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+  sourceConversation Conversation?    @relation("LearnLaterSourceConversation", fields: [sourceConversationId], references: [id], onDelete: SetNull)
+  sourceMessage      Message?         @relation("LearnLaterSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  digInConversations Conversation[]   @relation("DigInConversations")
+  slotImpressions    SlotImpression[]
 
   @@index([userId, status])
   @@index([sourceConversationId])
   @@index([sourceMessageId])
   @@index([conceptId])
+}
+
+// ─── End-of-answer slot experiment (E1–E5) ──────────────────────────────────
+
+/// One end-of-answer slot shown under an immediate answer (lookup / task /
+/// direct). Written in the same transaction as the answer message and the
+/// featured LearnLaterItem (E3), only while EXPERIMENT.active. Tier-unlock
+/// moments are never logged (E4). Engagement columns are filled by the
+/// /api/slot/[id]/* routes; secondary metrics and the guardrail are derived in
+/// src/lib/slot/results.ts.
+///
+/// Experiment data outlives the demo user: `userId`, `conversationId`,
+/// `messageId` and `learnLaterItemId` are plain-text SNAPSHOTS (never
+/// nulled), while the `*RefId` columns are the real foreign keys and are set
+/// to NULL when the user (persona reset), conversation, message or item is
+/// deleted. Query by the snapshot columns; join through the relations when
+/// they're still there.
+model SlotImpression {
+  id             String @id @default(cuid())
+  /// Snapshot of the session-clone User id (kept after a persona reset).
+  userId         String
+  /// Snapshot of the conversation id.
+  conversationId String
+  /// Snapshot of the answer message the slot sits under.
+  messageId      String @unique
+  /// The user message that triggered the answer (snapshot).
+  userMessageId  String
+  /// Answer mode of the answer — one of "lookup" | "task" | "direct"
+  /// (ImmediateAnswerMode in src/lib/pipeline/route-policy.ts).
+  answerMode     String
+
+  // ── Live foreign keys (NULL once the row they point at is deleted) ──
+  userRefId           String?
+  conversationRefId   String?
+  messageRefId        String? @unique
+  learnLaterItemRefId String?
+
+  // ── Featured hidden decision (E2, E3) ──
+  /// Snapshot of the saved (always, E3) LearnLaterItem id.
+  learnLaterItemId            String?
+  /// Snapshot of what was featured (the item may later change or be deleted).
+  featuredTitle               String
+  featuredConceptSlug         String?
+  /// The user's mastery score on the featured concept when the slot was
+  /// shown; null when there is no concept or no mastery yet (E5 mastery delta).
+  featuredMasteryAtImpression Float?
+  /// Candidate snapshot in router order (a why card first):
+  /// [{ title, conceptSlug, why, rank }] — rank is 1-based, null for the why card.
+  candidates                  Json
+  /// Ranked hidden-decision candidates offered to the E2 draw (excludes a why card).
+  candidateCount              Int
+  /// 1-based rank of the featured candidate; null when the why card was featured.
+  featuredRank                Int?
+  /// True when a task's whyCallout was featured (fixed, not randomized — L8).
+  featuredIsWhy               Boolean @default(false)
+  /// EXPERIMENT.topPickProbability at draw time.
+  topPickProbability          Float
+
+  // ── Variant (E1, E4) ──
+  /// The variant actually shown.
+  variant          SlotVariant
+  /// The variant drawn — the randomized assignment; results group by this
+  /// (intent-to-treat). Differs from `variant` only after a fallback.
+  drawnVariant     SlotVariant
+  /// Why `variant` differs from `drawnVariant`: "content_not_ready" | "content_failed".
+  fallbackReason   String?
+  eligibleVariants SlotVariant[]
+  /// Weights snapshot for the eligible variants at draw time.
+  weights          Json
+  /// Dev-only forced variant (never in production). Excluded from results.
+  forced           Boolean       @default(false)
+  /// Variant payload as generated, including server-only fields (quick-check
+  /// correct answer + explanation). Never sent raw to the client.
+  payload          Json?
+  createdAt        DateTime      @default(now())
+
+  // ── Engagement (E5 primary) ──
+  /// First engagement and when it happened.
+  engagement            SlotEngagement?
+  engagedAt             DateTime?
+  digInAt               DateTime?
+  digInConversationId   String?
+  walkthroughStartedAt  DateTime?
+  /// The FramingExchange the walk-through created.
+  walkthroughExchangeId String?         @unique
+  quickcheckAnsweredAt  DateTime?
+  /// { selectedIndex: number | null, dontKnow: boolean, correct: boolean }
+  quickcheckResponse    Json?
+  applyClickedAt        DateTime?
+  /// The answer message the apply-it answer produced.
+  applyMessageId        String?
+
+  user           User?           @relation(fields: [userRefId], references: [id], onDelete: SetNull)
+  conversation   Conversation?   @relation(fields: [conversationRefId], references: [id], onDelete: SetNull)
+  message        Message?        @relation(fields: [messageRefId], references: [id], onDelete: SetNull)
+  learnLaterItem LearnLaterItem? @relation(fields: [learnLaterItemRefId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([conversationId])
+  @@index([learnLaterItemId])
+  @@index([userRefId])
+  @@index([conversationRefId])
+  @@index([learnLaterItemRefId])
 }
 
 // ─── Ops ────────────────────────────────────────────────────────────────────
