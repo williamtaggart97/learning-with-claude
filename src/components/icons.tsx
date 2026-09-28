@@ -124,3 +124,43 @@ export const ChatIcon = (p: IconProps) => (
     <path d="M5 18.5V7a2.5 2.5 0 0 1 2.5-2.5h9A2.5 2.5 0 0 1 19 7v6a2.5 2.5 0 0 1-2.5 2.5H9z" />
   </Icon>
 );
+
+export const LockIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="5.5" y="10.5" width="13" height="9" rx="2" />
+    <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+  </Icon>
+);
+
+export const PencilIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M15.5 5.5l3 3L9 18H6v-3z" />
+    <path d="M13.5 7.5l3 3" />
+  </Icon>
+);
+
+export const ArrowRightIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </Icon>
+);
+
+export const ResetIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
+    <path d="M4.5 4.5v4h4" />
+  </Icon>
+);
+
+export const ChevronUpDownIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 9.5l4-4 4 4M8 14.5l4 4 4-4" />
+  </Icon>
+);
+
+export const UndoIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 7.5L5 11.5l4 4" />
+    <path d="M5 11.5h9a4.5 4.5 0 0 1 0 9h-2" />
+  </Icon>
+);

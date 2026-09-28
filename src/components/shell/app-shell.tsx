@@ -11,6 +11,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChatSessionsProvider } from "@/components/chat/chat-sessions-provider";
 import { ProfilePanel } from "@/components/profile/profile-panel";
+import { UnlockCelebration } from "@/components/profile/unlock-celebration";
 import { ConversationsProvider } from "@/lib/client/conversations-store";
 import { ProfileProvider } from "@/lib/client/profile-store";
 import { useMediaQuery } from "@/lib/client/use-media-query";
@@ -113,6 +114,8 @@ export function AppShell({
               </div>
             </div>
           </div>
+          {/* X7: tier-unlock reveal (portalled modal dialog). */}
+          <UnlockCelebration />
         </ShellContext.Provider>
         </ChatSessionsProvider>
       </ConversationsProvider>

@@ -7,13 +7,15 @@
 //     useConversationSession(dto)                 `/c/[id]` → the live session for id, or one
 //                                                             hydrated from the server DTO
 //     useStartNewChat()                           "New chat" links → fresh, clean new chat
+//     useStartChatWith()                          start a new chat that sends a prompt (suggested topics)
+//     useAnyChatBusy()                            true while any session is routing/streaming
 //
 // A new chat starts under no id. On its first `conversation` event it is
 // promoted (registered under the conversation id) and, if a view is showing
 // it on `/`, the URL becomes /c/[id] via router.replace. The /c/[id] page then
 // mounts a ChatView that attaches to the same live session, so the stream is
 // never dropped. Navigating away and back re-attaches the same way.
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
   useContext,
@@ -37,6 +39,12 @@ class ChatSessionRegistry {
   private newChat: ChatSession | null = null;
   private newChatVersion = 0;
   private newChatListeners = new Set<() => void>();
+  /** Every session this registry created (busy tracking). */
+  private live = new Set<ChatSession>();
+  private anyBusy = false;
+  private busyListeners = new Set<() => void>();
+  /** A new chat started from outside the `/` view: follow it to /c/[id] once promoted. */
+  private follow: ChatSession | null = null;
   private readonly host: () => ChatSessionHost;
 
   constructor(
@@ -55,6 +63,8 @@ class ChatSessionRegistry {
 
   /** The live session for a conversation, or a new one seeded from the DTO. */
   forConversation(dto: ConversationDTO): ChatSession {
+    // The user opened some other conversation: stop following a startWith chat.
+    if (this.follow && this.follow.getState().conversationId !== dto.id) this.follow = null;
     const existing = this.byConversation.get(dto.id);
     if (existing) {
       // Most recently used last (eviction order).
@@ -62,7 +72,7 @@ class ChatSessionRegistry {
       this.byConversation.set(dto.id, existing);
       return existing;
     }
-    const session = new ChatSession(dto, this.host);
+    const session = this.track(new ChatSession(dto, this.host));
     this.byConversation.set(dto.id, session);
     this.evict();
     return session;
@@ -76,18 +86,72 @@ class ChatSessionRegistry {
   acquireNewChat(): ChatSession {
     const cur = this.newChat;
     if (cur && cur.getState().conversationId === null && (cur.pristine || cur.busy)) return cur;
-    if (cur && cur.getState().conversationId === null) cur.dispose();
-    this.newChat = new ChatSession(null, this.host);
+    if (cur && cur.getState().conversationId === null) this.drop(cur);
+    this.newChat = this.track(new ChatSession(null, this.host));
     return this.newChat;
   }
 
+  /**
+   * Start a fresh new chat and send `text` as its first message. The caller
+   * navigates to `/`; the `/` view attaches to this (busy) session, and on
+   * promotion the URL follows to /c/[id] even if the view mounted late.
+   * Ignored (returns false) while a previous startWith chat is still waiting
+   * for its conversation, so a double-click never creates two chats.
+   */
+  startWith(text: string): boolean {
+    const f = this.follow;
+    if (f && f.busy && f.getState().conversationId === null) return false;
+    this.startNewChat();
+    const session = this.acquireNewChat();
+    this.follow = session;
+    void session.send(text);
+    return true;
+  }
+
+  /**
+   * The route changed. startWith navigates to `/`; landing anywhere else
+   * means the user went somewhere on purpose, so don’t yank them to the
+   * followed chat when it is promoted.
+   */
+  routeChanged(pathname: string) {
+    if (this.follow && pathname !== "/") this.follow = null;
+  }
+
+  private track(session: ChatSession): ChatSession {
+    this.live.add(session);
+    session.subscribe(this.recomputeBusy);
+    return session;
+  }
+
+  private drop(session: ChatSession) {
+    session.dispose();
+    this.live.delete(session);
+    queueMicrotask(this.recomputeBusy);
+  }
+
+  private recomputeBusy = () => {
+    let busy = false;
+    for (const s of this.live) if (s.busy) busy = true;
+    if (busy === this.anyBusy) return;
+    this.anyBusy = busy;
+    for (const l of this.busyListeners) l();
+  };
+
+  subscribeBusy = (listener: () => void) => {
+    this.busyListeners.add(listener);
+    return () => void this.busyListeners.delete(listener);
+  };
+
+  getAnyBusy = () => this.anyBusy;
+
   /** "New chat" clicked: the `/` view switches to a clean session. */
   startNewChat() {
+    this.follow = null;
     const cur = this.newChat;
     if (cur && cur.pristine) return;
     // An in-flight new chat keeps streaming detached (it will be promoted and
     // appear in the sidebar); an idle, stopped one is simply dropped.
-    if (cur && !cur.busy && cur.getState().conversationId === null) cur.dispose();
+    if (cur && !cur.busy && cur.getState().conversationId === null) this.drop(cur);
     this.newChat = null;
     this.newChatVersion++;
     for (const l of this.newChatListeners) l();
@@ -105,7 +169,14 @@ class ChatSessionRegistry {
     // The next visit to `/` gets a fresh chat. Don't bump the version: the
     // `/` view keeps showing this session until the URL swap completes.
     if (this.newChat === session) this.newChat = null;
-    if (session.viewers > 0 && window.location.pathname === "/") this.navigateToConversation(id);
+    // A followed chat (startWith) goes to /c/[id] even if the navigation to
+    // `/` hasn't landed yet — the user explicitly asked to open it.
+    if (this.follow === session) {
+      this.follow = null;
+      this.navigateToConversation(id);
+    } else if (session.viewers > 0 && window.location.pathname === "/") {
+      this.navigateToConversation(id);
+    }
   }
 
   private evict() {
@@ -113,7 +184,7 @@ class ChatSessionRegistry {
     for (const [id, s] of this.byConversation) {
       if (this.byConversation.size <= MAX_KEPT_SESSIONS) break;
       if (s.viewers === 0 && !s.busy) {
-        s.dispose();
+        this.drop(s);
         this.byConversation.delete(id);
       }
     }
@@ -135,10 +206,11 @@ class ChatSessionRegistry {
   }
 
   private dispose() {
-    for (const s of this.byConversation.values()) s.dispose();
+    for (const s of this.live) s.dispose();
+    this.live.clear();
     this.byConversation.clear();
-    this.newChat?.dispose();
     this.newChat = null;
+    this.follow = null;
   }
 }
 
@@ -161,6 +233,8 @@ export function ChatSessionsProvider({ children }: { children: React.ReactNode }
   const [registry] = useState(() => new ChatSessionRegistry(current, navigate));
   // Layout effect: runs before any child's passive effect (e.g. the dig-in kickoff).
   useLayoutEffect(() => registry.update(current, navigate));
+  const pathname = usePathname();
+  useLayoutEffect(() => registry.routeChanged(pathname), [registry, pathname]);
   useEffect(() => {
     registry.cancelDispose();
     return () => registry.scheduleDispose();
@@ -212,4 +286,23 @@ export function useNewChatSession(): ChatSession {
 export function useStartNewChat(): () => void {
   const registry = useRegistry();
   return () => registry.startNewChat();
+}
+
+/**
+ * Start a new chat whose first message is `text` (e.g. a suggested topic)
+ * and show it: navigates to `/`, which attaches to the in-flight session.
+ */
+export function useStartChatWith(): (text: string) => void {
+  const registry = useRegistry();
+  const router = useRouter();
+  return (text: string) => {
+    if (!registry.startWith(text)) return;
+    if (window.location.pathname !== "/") router.push("/");
+  };
+}
+
+/** True while any chat session is routing or streaming (e.g. to hold a celebration until the answer lands). */
+export function useAnyChatBusy(): boolean {
+  const registry = useRegistry();
+  return useSyncExternalStore(registry.subscribeBusy, registry.getAnyBusy, () => false);
 }

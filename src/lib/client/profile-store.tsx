@@ -15,8 +15,9 @@
 // Seeded from the server-rendered ProfileDTO; the provider is remounted when
 // the session user changes (persona switch / reset), so it never mixes users.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { TIER_THRESHOLDS } from "@/config";
 import { API_ROUTES, type ProgressEvent } from "@/lib/api-contract";
-import type { ProfileDTO, Tier } from "@/lib/types";
+import type { LearnLaterItemDTO, ProfileDTO, Tier } from "@/lib/types";
 import { apiJson } from "./api";
 
 export interface TierUnlock {
@@ -38,6 +39,18 @@ interface ProfileContextValue {
   profile: ProfileDTO;
   /** Refetch GET /api/profile now. Resolves to the fresh profile (or the current one on failure). */
   refresh: () => Promise<ProfileDTO>;
+  /** Adopt a ProfileDTO the server just returned (e.g. from PATCH /api/profile). */
+  replaceProfile: (next: ProfileDTO) => void;
+  /** Apply a local change to the latest profile (optimistic/confirmed updates before a refresh). */
+  updateProfile: (fn: (current: ProfileDTO) => ProfileDTO) => void;
+  /**
+   * Items dismissed during this visit, newest first. GET /api/profile omits
+   * dismissed items, so this is what the queue's "Dismissed" section (with
+   * Restore) shows. Cleared on persona switch/reset (the provider remounts).
+   */
+  dismissedItems: LearnLaterItemDTO[];
+  /** Record a Learn It Later status change (dismissed → listed; restored/dug in → unlisted). */
+  noteItemStatus: (item: LearnLaterItemDTO) => void;
   /** Most recent unlock signal, until clearUnlock(). */
   lastUnlock: TierUnlock | null;
   clearUnlock: () => void;
@@ -63,6 +76,7 @@ const POLL_SCHEDULE_MS = [1500, 4000, 8000, 12000, 20000];
 export function ProfileProvider({ initialProfile, children }: { initialProfile: ProfileDTO; children: React.ReactNode }) {
   const [profile, setProfile] = useState(initialProfile);
   const [lastUnlock, setLastUnlock] = useState<TierUnlock | null>(null);
+  const [dismissedItems, setDismissedItems] = useState<LearnLaterItemDTO[]>([]);
   const profileRef = useRef(profile);
   const listeners = useRef(new Set<UnlockListener>());
   /** Highest tier already announced, so polling never re-announces a `progress` unlock. */
@@ -73,6 +87,11 @@ export function ProfileProvider({ initialProfile, children }: { initialProfile: 
     profileRef.current = next;
     setProfile(next);
   }, []);
+
+  const updateProfile = useCallback(
+    (fn: (current: ProfileDTO) => ProfileDTO) => commit(fn(profileRef.current)),
+    [commit],
+  );
 
   const signalUnlock = useCallback((tier: Tier, source: TierUnlock["source"]) => {
     if (tier <= celebratedTier.current) return;
@@ -100,6 +119,13 @@ export function ProfileProvider({ initialProfile, children }: { initialProfile: 
     }
   }, [commit]);
 
+  const noteItemStatus = useCallback((item: LearnLaterItemDTO) => {
+    setDismissedItems((cur) => {
+      const rest = cur.filter((i) => i.id !== item.id);
+      return item.status === "dismissed" ? [item, ...rest] : rest;
+    });
+  }, []);
+
   const beginTurn = useCallback(
     (): TurnSnapshot => ({ tier: profileRef.current.tier, lastAssessedAt: profileRef.current.lastAssessedAt }),
     [],
@@ -108,12 +134,22 @@ export function ProfileProvider({ initialProfile, children }: { initialProfile: 
   const applyProgress = useCallback(
     (event: ProgressEvent) => {
       const current = profileRef.current;
+      // The meter reports framing rounds only while that is the closest path;
+      // at Tier 1 it may switch to concepts. Keep answeredFramingCount
+      // consistent with the tier either way: Tier 1 (unlike Tier 2, which 8
+      // concepts alone can reach) implies at
+      // least the Tier 1 threshold (so the celebration never shows a stale
+      // "4 framing rounds"). A later refresh() replaces it with the exact count.
+      let answeredFramingCount =
+        event.progress.metric === "framing_exchanges" ? event.progress.current : current.answeredFramingCount;
+      if (event.progress.tier === 1 || event.unlocked === 1) {
+        answeredFramingCount = Math.max(answeredFramingCount, TIER_THRESHOLDS.tier1.framingExchanges);
+      }
       commit({
         ...current,
         tier: event.progress.tier,
         progress: event.progress,
-        answeredFramingCount:
-          event.progress.metric === "framing_exchanges" ? event.progress.current : current.answeredFramingCount,
+        answeredFramingCount,
       });
       if (event.unlocked !== null) signalUnlock(event.unlocked, "progress");
     },
@@ -163,8 +199,34 @@ export function ProfileProvider({ initialProfile, children }: { initialProfile: 
   const clearUnlock = useCallback(() => setLastUnlock(null), []);
 
   const value = useMemo<ProfileContextValue>(
-    () => ({ profile, refresh, lastUnlock, clearUnlock, subscribeUnlock, beginTurn, applyProgress, afterAnswer }),
-    [profile, refresh, lastUnlock, clearUnlock, subscribeUnlock, beginTurn, applyProgress, afterAnswer],
+    () => ({
+      profile,
+      refresh,
+      replaceProfile: commit,
+      updateProfile,
+      dismissedItems,
+      noteItemStatus,
+      lastUnlock,
+      clearUnlock,
+      subscribeUnlock,
+      beginTurn,
+      applyProgress,
+      afterAnswer,
+    }),
+    [
+      profile,
+      refresh,
+      commit,
+      updateProfile,
+      dismissedItems,
+      noteItemStatus,
+      lastUnlock,
+      clearUnlock,
+      subscribeUnlock,
+      beginTurn,
+      applyProgress,
+      afterAnswer,
+    ],
   );
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
 }

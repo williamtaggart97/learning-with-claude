@@ -59,6 +59,7 @@
   /* Learning highlight (unlock celebration, "new" badges) — warm gold */
   --color-spark: #e0a93b;
   --color-spark-soft: #f8ecd0;
+  --color-spark-ink: #6e4a08; /* gold text/icons on spark-soft or cream */
 
   /* Mastery scale, low → high (profile concept bars) */
   --color-mastery-low: #d98a6b;
@@ -131,7 +132,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
-  *::after {
+  *::after,
+  ::backdrop {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
@@ -395,4 +397,90 @@ body {
 }
 .hljs-strong {
   font-weight: 600;
+}
+
+/*
+ * ── Phase 4: learning surfaces ───────────────────────────────────────────────
+ * Unlock glow (header meter), celebration sparks, low-confidence hatching and
+ * dialog backdrop. All motion is neutralised by the reduced-motion rule above.
+ */
+@keyframes lm-glow {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-spark) 70%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--color-spark) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.lm-unlock-glow {
+  animation:
+    rise-in 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both,
+    lm-glow 1.4s ease-out 300ms 2;
+}
+
+/* Celebration: sparks drift up and fade around the badge. */
+@keyframes lm-spark {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.4) rotate(0deg);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx, 0), var(--dy, -40px)) scale(1) rotate(45deg);
+  }
+}
+.lm-spark {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  color: var(--color-spark);
+  animation: lm-spark 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  pointer-events: none;
+}
+@keyframes lm-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.lm-pop {
+  animation: lm-pop 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* Native <dialog> (celebration, confirms) */
+dialog.lm-dialog {
+  margin: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow: visible;
+}
+dialog.lm-dialog::backdrop {
+  background: color-mix(in srgb, var(--color-learn-900) 35%, transparent);
+  backdrop-filter: blur(2px);
+  animation: fade-in 220ms ease-out both;
+}
+
+/* A style dimension Claude isn't sure about yet: hatched track. */
+.lm-hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--color-learn-100) 0 4px,
+    var(--color-surface) 4px 8px
+  );
 }

@@ -83,14 +83,35 @@ const SHAKY = 0.5;
 const SOLID = 0.75;
 const MAX_TOPICS = 4;
 
-/** Project descriptions only ("Predicting churn…" → "predicting churn…"). Concept names are never lowercased (proper nouns: "Kaplan–Meier", "Welch's t-test"). */
+/** Project descriptions ("Predicting churn…" → "predicting churn…"). */
 function lowerFirst(text: string): string {
   return /^[A-Z][a-z]/.test(text) ? text[0].toLowerCase() + text.slice(1) : text;
 }
 
-/** A concept name mid-sentence: verbatim, except a leading article ("The bootstrap" → "the bootstrap"). */
+/**
+ * Leading words that stay capitalized mid-sentence: eponyms and proper nouns
+ * ("Cox proportional hazards model", "Welch's t-test", "Kaplan–Meier").
+ * Acronyms ("ANOVA", "ROC curves", "DAGs") are detected by shape instead.
+ */
+const PROPER_LEADING_WORDS = new Set([
+  "bayes", "bayesian", "benjamini", "bernoulli", "bonferroni", "box", "brier", "chi", "cohen", "cox",
+  "fisher", "gaussian", "gini", "holm", "hosmer", "huber", "kaplan", "kolmogorov", "kruskal", "mann",
+  "markov", "monte", "pearson", "poisson", "shapiro", "spearman", "student", "tukey", "wald", "welch",
+  "wilcoxon",
+]);
+
+/**
+ * A concept name mid-sentence: "Competing risks" → "competing risks",
+ * "The bootstrap" → "the bootstrap". Only a plain capitalized first word
+ * (/^[A-Z][a-z]+$/: no hyphen, dash, apostrophe or digit) that isn't a known
+ * proper noun is lowercased; anything else keeps its case ("Cox…",
+ * "Simpson's paradox", "G-computation", "Nelson–Aalen", "ANOVA", "P-values").
+ */
 function inSentence(name: string): string {
-  return name.replace(/^The /, "the ");
+  const first = name.split(/[\s(]/, 1)[0] ?? "";
+  if (!/^[A-Z][a-z]+$/.test(first)) return name;
+  if (PROPER_LEADING_WORDS.has(first.toLowerCase())) return name;
+  return name[0].toLowerCase() + name.slice(1);
 }
 
 function projectPhrase(ctx: UserContextDTO | null): string | null {
@@ -151,7 +172,7 @@ export function suggestTopics(
 
   // 1. Shaky concepts (at most 2, so the list isn't all remediation).
   for (const c of shaky.slice(0, 2)) {
-    add(c.slug, `Firm up ${c.name} (mastery ${pct(c.score)}).`, true);
+    add(c.slug, `Firm up ${inSentence(c.name)} (mastery ${pct(c.score)}).`, true);
   }
   // 2. Neighbours of queued Learn It Later concepts.
   for (const item of queued) {
@@ -159,11 +180,11 @@ export function suggestTopics(
   }
   // 3. Neighbours of shaky concepts.
   for (const c of shaky) {
-    firstNeighbour(c.slug, `Goes hand in hand with ${c.name}, which you're still firming up (${pct(c.score)}).`);
+    firstNeighbour(c.slug, `Goes hand in hand with ${inSentence(c.name)}, which you're still firming up (${pct(c.score)}).`);
   }
   // 4. Neighbours of solid concepts.
   for (const c of solid) {
-    firstNeighbour(c.slug, `The natural next step after ${c.name}, which you're solid on (${pct(c.score)}).`);
+    firstNeighbour(c.slug, `The natural next step after ${inSentence(c.name)}, which you're solid on (${pct(c.score)}).`);
   }
   return out;
 }
