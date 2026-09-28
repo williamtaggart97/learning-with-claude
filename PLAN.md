@@ -27,16 +27,28 @@ Every decision settled during design, grouped by area. For the narrative overvie
 | L1 | Core mechanism: framing questions | For concept questions Claude asks 1–3 framing questions that show the steps toward the answer. They never reveal the answer and never ask the user to predict it. Rejected alternatives: pure productive struggle (too costly under deadlines) and predict-then-reveal (users don't know the answer). |
 | L2 | "I don't know" always available | On every framing question. It's treated as useful profile data, not failure. |
 | L3 | Mixed question formats | Mostly short answer, some multiple choice or multi-select. |
-| L4 | Claude decides when to frame | A router classifies each message as concept or lookup, and leans toward treating apparent lookups as learning opportunities. |
-| L5 | Lookups always answer immediately | Then flag the important hidden decisions (e.g., "which t-test?") as Learn It Later callouts. |
+| L4 | Claude decides when to frame (revised) | A router classifies each message as concept, lookup or task. It leans toward concept only when choosing between concept and lookup. Requests to produce something (code, prose, a fix) are tasks even when a concept sits underneath. Messages that mention a deadline are never framed. Evidence: `research/router-mix/`. |
+| L5 | Lookups and tasks answer immediately (revised) | Every answer ends with at most one box, the end-of-answer slot. What fills it, and which hidden decision it features, is an experiment (see E1–E5). Only the featured hidden decision is saved to Learn It Later; there are no extra suggestion rows. Priority moments such as a tier unlock replace the slot. |
 | L6 | Answers are shaped by framing responses | They build on what the user said, confirming what they got right and correcting the rest. |
 | L7 | Answers are shaped by learning style | Presentation adapts to the inferred style (see P2). |
+| L8 | Tasks are never blocked by framing | The work product comes first. When a task comes from a real misconception (e.g., leakage, perfect separation), Claude adds a "why this happened" Learn It Later card. Framing after the answer is a possible phase 2. |
+| L9 | Framing is rationed: once per topic | No second framing exchange on a concept already framed in the same conversation. "Skip, just answer" on each message stays the only user control; there's no deadline-mode toggle. |
+
+## End-of-answer experiment
+
+| # | Decision | Detail |
+|---|----------|--------|
+| E1 | The slot rotates among variants | **A** Learn It Later card with "Dig in now" · **B** "Walk me through it" (optional framing after the answer) · **C** one-question quick check, always with "I don't know" · **D** apply it to your project (needs known user context) · **E** nothing (control). Only variants that fit the message are eligible; weights live in config and start equal. |
+| E2 | "Most important" has randomness | The router returns up to 3 hidden-decision candidates, ranked. The pipeline features rank 1 most of the time (default 60%) and otherwise picks one of the others at random. This tests whether the router's ranking matches what users engage with. |
+| E3 | The featured decision is always saved | It goes to Learn It Later whatever the variant, even E, so the queue behaves the same across variants and the experiment only tests how it's surfaced. |
+| E4 | Assignment is random per answer | Per-answer randomization gets data fastest at demo scale. Switch to per-user assignment if downstream metrics like return visits become the goal. Priority moments (a tier unlock) are never randomized or logged. |
+| E5 | What we measure | **Primary:** the slot is engaged in the same session (dig in, walk-through started, quick check answered, feature list checked). **Secondary:** Learn It Later dig-ins within 7 days, framing exchanges completed, mastery gains from the assessor. **Guardrail:** the conversation ends right after the answer. Demo traffic won't reach significance; the point is working instrumentation and a readout. With real traffic, move to a bandit (e.g., Thompson sampling). |
 
 ## Learn It Later
 
 | # | Decision | Detail |
 |---|----------|--------|
-| Q1 | Deferral keeps the user on task | Concepts the user skips or that Claude flags go to a queue instead of interrupting the task. |
+| Q1 | Deferral keeps the user on task | Concepts the user skips and the hidden decision featured in each answer (E3) go to a queue instead of interrupting the task. |
 | Q2 | The queue doubles as interest data | It's used as insight into who the user is and what content to surface. |
 | Q3 | Card preview + "dig in" | The card briefly explains the concept and how it applied where it came up. "Dig in" opens a new chat. |
 | Q4 | Focus on applying the concept in new ways | The dig-in chat connects the concept back to the original problem, then to other problems relevant to the user's context. |

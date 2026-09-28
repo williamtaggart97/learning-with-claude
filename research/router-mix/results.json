@@ -1,0 +1,972 @@
+[
+  {
+    "id": 1,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "ValueError: Input contains NaN, infinity or a value too large for dtype('float64') when I call model.fit(X, y). How do I fix this?",
+    "kind": "lookup",
+    "rationale": "User is asking for a technical fix to a runtime error—they need a diagnostic recipe, not conceptual understanding of why this error happens.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Missing data handling in fit()",
+      "Feature scaling and numerical stability"
+    ]
+  },
+  {
+    "id": 2,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "My lmer model says 'boundary (singular) fit: see help(isSingular)'. What do I do?",
+    "kind": "concept",
+    "rationale": "The user is asking about a warning in lmer output, but the real learning need is understanding what singular fits mean, why they happen, and what modeling choices are available—not just a syntax fix.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 3,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "Why is my pandas merge producing way more rows than either input table? Code: df = claims.merge(visits, on='patient_id')",
+    "kind": "concept",
+    "rationale": "The user is experiencing an unexpected result from a merge operation; the question hides a real data structure and matching logic issue — understanding cartesian products and join semantics is needed to diagnose and fix the problem.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 4,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "ConvergenceWarning: lbfgs failed to converge (status=1). Increase the number of iterations. My logistic regression has 40 features, should I just bump max_iter?",
+    "kind": "concept",
+    "rationale": "The user sees a convergence warning and asks whether to simply increase max_iter, but this hides a real learning decision: convergence failure with many features signals potential numerical instability, multicollinearity, or scaling issues—not just iteration budget. The right answer requires understanding what non-convergence means and what actually causes it.",
+    "nQuestions": 2,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 5,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "ggplot is ordering my x-axis months alphabetically (Apr, Aug, Dec...) instead of Jan to Dec. Fix?",
+    "kind": "lookup",
+    "rationale": "User is asking for a syntax/recipe fix to ggplot ordering; the underlying concept (factor levels) is incidental to the immediate need.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Factor levels and categorical order"
+    ]
+  },
+  {
+    "id": 6,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "My test accuracy is 99% but the model is useless in practice. Here's my pipeline: I scale the whole dataset, then train_test_split, then fit a random forest. What's wrong?",
+    "kind": "concept",
+    "rationale": "This is a classic data leakage mistake where the user is scaling before the split, a conceptual misunderstanding of train/test contamination and its consequences, not just a syntax lookup.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 7,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "SettingWithCopyWarning keeps popping up on df_sub['age_group'] = ... How do I get rid of it properly?",
+    "kind": "lookup",
+    "rationale": "The user is asking for a pandas syntax/error-handling fix. However, the warning flags a real data operation choice (whether they're modifying a view vs. a copy), which is worth flagging as a hidden decision.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "View vs. copy in pandas"
+    ]
+  },
+  {
+    "id": 8,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "glm() in R gives me 'fitted probabilities numerically 0 or 1 occurred'. My outcome is readmission and one predictor is discharge_to_hospice.",
+    "kind": "concept",
+    "rationale": "The warning signals complete or near-complete separation in logistic regression—a real concept about model estimation, not just a syntax fix. Understanding why this happens and how to handle it requires grasping the underlying mechanism (maximum likelihood and the boundary of the parameter space).",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 9,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "My Stan model has 400 divergent transitions after warmup. It's a hierarchical model with patients nested in hospitals.",
+    "kind": "concept",
+    "rationale": "The user is reporting a technical issue (divergences), but the real learning need is understanding what divergences mean, why they occur in hierarchical models, and what to do about them — this requires conceptual understanding of sampling, geometry, and model structure, not just a troubleshooting recipe.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 10,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "CUDA out of memory when training my LSTM on batch size 64. 8GB GPU. What are my options?",
+    "kind": "lookup",
+    "rationale": "User is asking for practical troubleshooting steps for a memory error; the underlying concepts (batch size trade-offs, model capacity) are secondary to the immediate need for a recipe.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Batch size and gradient estimation",
+      "Model size vs. memory"
+    ]
+  },
+  {
+    "id": 11,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "Why does my Kaplan–Meier curve drop to zero at the end? I only have like 3 patients left at month 30.",
+    "kind": "concept",
+    "rationale": "The user is asking about an interpretation of a survival curve — why it behaves a certain way — which requires understanding censoring, risk sets, and the mechanics of the Kaplan–Meier estimator, not just how to plot it.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 12,
+    "bucket": "debug",
+    "intent": "task",
+    "text": "SQL query is returning duplicate customers after I join orders to customers and then to support_tickets. How do I dedupe?",
+    "kind": "lookup",
+    "rationale": "User is asking for a SQL syntax/recipe to remove duplicates after a join operation; the underlying data structure issue is incidental.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Join cardinality and aggregation"
+    ]
+  },
+  {
+    "id": 13,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Write a Python function that does stratified k-fold cross-validation for an XGBoost classifier and returns mean AUC with a 95% CI.",
+    "kind": "lookup",
+    "rationale": "User is asking for code/syntax to implement a specific technique (stratified k-fold CV with XGBoost and AUC reporting). The statistical ideas (cross-validation, stratification, AUC) are incidental to the implementation request.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Why stratified (not random) fold splits?",
+      "AUC CI construction method"
+    ]
+  },
+  {
+    "id": 14,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Can you write R code to fit a Cox model for time to readmission with age, sex, comorbidity index, and hospital as a frailty term?",
+    "kind": "lookup",
+    "rationale": "User is asking for syntax to fit a specific Cox model variant (with frailty). They already know the concept (Cox model, frailty as random effect); they need the R formula and function call.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Frailty structure and assumption",
+      "Proportional hazards assumption"
+    ]
+  },
+  {
+    "id": 15,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Make me a seaborn figure: 2x2 grid of histograms of tenure_months split by plan_type, shared x-axis, publication quality.",
+    "kind": "lookup",
+    "rationale": "User is asking for seaborn syntax/recipe to create a specific plot layout; the statistical understanding (histograms, faceting) is incidental to the code request.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Histogram bin choice and scale"
+    ]
+  },
+  {
+    "id": 16,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Write a function to bootstrap the median difference between two groups, 10,000 resamples, return the percentile CI.",
+    "kind": "lookup",
+    "rationale": "User is asking for implementation code (a function recipe) for a bootstrap procedure they already understand conceptually.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Bootstrap resampling strategy",
+      "Percentile vs. other CI methods"
+    ]
+  },
+  {
+    "id": 17,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Convert this Stata code to R: xtreg y x1 x2, fe vce(cluster id)",
+    "kind": "lookup",
+    "rationale": "User is asking for a direct syntax translation from Stata to R; the statistical idea (fixed-effects regression with clustered standard errors) is incidental to the request.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Fixed effects vs. random effects",
+      "Clustered standard errors and inference"
+    ]
+  },
+  {
+    "id": 18,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "I need a script that reads 200 CSVs from a folder, keeps only rows where status == 'active', and writes one parquet file.",
+    "kind": "lookup",
+    "rationale": "User is asking for syntax/recipe to perform a data I/O and filtering task; the logic is straightforward and no statistical concept needs unpacking.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Data filtering and aggregation"
+    ]
+  },
+  {
+    "id": 19,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Write a simulation to estimate power for a two-sample t-test with effect size 0.3 across n = 20 to 200.",
+    "kind": "lookup",
+    "rationale": "User is asking for syntax/code to run a simulation; the statistical concept (power, effect size) is already understood and the need is for a working recipe.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Which t-test variant?",
+      "Significance level and two-sided test?"
+    ]
+  },
+  {
+    "id": 20,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Implement a propensity score matching pipeline in Python: logistic model for treatment, 1:1 nearest neighbor with caliper 0.2 SD, then balance table.",
+    "kind": "lookup",
+    "rationale": "User is asking for code implementation (pipeline, function, syntax) for a known method; the statistical idea (propensity score matching) is already familiar to them.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Caliper choice and covariate balance",
+      "1:1 matching with unequal group sizes"
+    ]
+  },
+  {
+    "id": 21,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Write a SQL query to compute 30-day readmission rate by hospital by month from an admissions table (patient_id, hospital_id, admit_date, discharge_date).",
+    "kind": "lookup",
+    "rationale": "User is asking for SQL syntax to compute a specific metric; the understanding of readmission rate itself is incidental to the code recipe they need.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Readmission window definition",
+      "Same admission vs. new patient episode"
+    ]
+  },
+  {
+    "id": 22,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Give me a sklearn Pipeline with one-hot encoding for categoricals, standard scaling for numerics, and a lasso logistic regression, tuned with GridSearchCV.",
+    "kind": "lookup",
+    "rationale": "User is asking for a specific code recipe (sklearn Pipeline + GridSearchCV) and is clearly already familiar with the components; the understanding is incidental to getting the syntax.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Lasso vs Ridge regularization",
+      "Scaling and preprocessing order"
+    ]
+  },
+  {
+    "id": 23,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Write a function that makes a calibration plot for my churn model with 10 bins.",
+    "kind": "lookup",
+    "rationale": "User is asking for syntax/code to produce a specific visualization; the statistical concept (probability calibration) is incidental to the functional request.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Binning strategy and reliability",
+      "Observed vs. predicted event rate"
+    ]
+  },
+  {
+    "id": 24,
+    "bucket": "write-code",
+    "intent": "task",
+    "text": "Can you refactor this notebook cell into functions? It's 150 lines of cleaning code with lots of repeated steps. [code pasted]",
+    "kind": "lookup",
+    "rationale": "User is asking for code refactoring—a software engineering task with no statistical concept behind it; the understanding (DRY principle, function design) is incidental to the task.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 25,
+    "bucket": "wrangle",
+    "intent": "task",
+    "text": "I have a wide table with columns bp_2019, bp_2020, bp_2021 per patient. Reshape to long with year and bp columns.",
+    "kind": "lookup",
+    "rationale": "User is asking for syntax to reshape data from wide to long format; the reshaping operation itself is a technical recipe, not a concept that requires understanding of why.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Implicit missing-data handling in reshape"
+    ]
+  },
+  {
+    "id": 26,
+    "bucket": "wrangle",
+    "intent": "task",
+    "text": "About 18% of my income variable is missing. Should I just drop those rows? I need the model done by Friday.",
+    "kind": "concept",
+    "rationale": "User is asking about a data handling choice (dropping missing data) that has statistical consequences for bias, inference, and study population. This is concept-level: requires understanding missing data mechanisms and why the choice matters.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 27,
+    "bucket": "wrangle",
+    "intent": "task",
+    "text": "How do I handle dates stored like '03/04/21' when some are US format and some are European?",
+    "kind": "lookup",
+    "rationale": "User is asking for a parsing/data-cleaning recipe for ambiguous date strings; the understanding of what the formats are is incidental.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Ambiguity resolution strategy"
+    ]
+  },
+  {
+    "id": 28,
+    "bucket": "wrangle",
+    "intent": "task",
+    "text": "I need to create a variable for 'readmitted within 30 days of discharge' from admissions data where each row is one admission.",
+    "kind": "lookup",
+    "rationale": "User is asking for a data transformation recipe (create a binary variable from timestamped admission records), not requesting conceptual understanding of why or when to use such a variable.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Handling same-day readmissions",
+      "Censoring and follow-up time"
+    ]
+  },
+  {
+    "id": 29,
+    "bucket": "wrangle",
+    "intent": "task",
+    "text": "My dataset has 2% churners. Should I oversample with SMOTE before training?",
+    "kind": "concept",
+    "rationale": "This is a strategic modeling choice that depends on understanding class imbalance consequences, SMOTE mechanics, and train/test leakage — not a syntax or recipe lookup.",
+    "nQuestions": 3,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "SMOTE and data leakage",
+      "Metric choice with class imbalance"
+    ]
+  },
+  {
+    "id": 30,
+    "bucket": "wrangle",
+    "intent": "task",
+    "text": "Help me bin age into clinically meaningful groups for my table 1.",
+    "kind": "lookup",
+    "rationale": "The user is asking for a practical recipe (how to bin age) rather than understanding why binning choices matter; however, the implicit decision of which bins to choose has statistical consequences for interpretation and comparability.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Binning choices affect comparability and inference"
+    ]
+  },
+  {
+    "id": 31,
+    "bucket": "write-prose",
+    "intent": "task",
+    "text": "Write the statistical analysis paragraph for my methods section: logistic regression for 30-day readmission, adjusted for age, sex, Charlson index, clustered SEs by hospital.",
+    "kind": "lookup",
+    "rationale": "User is requesting methods-section text (syntax/recipe) for a logistic regression analysis; the model choice and covariates are already decided. However, 'clustered SEs by hospital' signals an important hidden decision about correlation structure that could affect inference.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Clustered SEs and ICC",
+      "Logistic regression for binary outcome"
+    ]
+  },
+  {
+    "id": 32,
+    "bucket": "write-prose",
+    "intent": "task",
+    "text": "Rewrite this results paragraph to sound less clunky: 'The OR was 1.8 (95% CI 1.2-2.7) which was significant at p=.004 meaning higher odds.'",
+    "kind": "lookup",
+    "rationale": "User is asking for writing/presentation help with an already-computed result; the statistical concepts (OR, CI, p-value) are incidental to the editing task.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Odds ratio vs. risk ratio"
+    ]
+  },
+  {
+    "id": 33,
+    "bucket": "write-prose",
+    "intent": "task",
+    "text": "Draft an email to my advisor explaining that my model results changed after I fixed a data leakage bug.",
+    "kind": "lookup",
+    "rationale": "The user is asking for help writing communication (an email template), not to understand a statistical concept. However, the mention of 'data leakage bug' signals an important hidden decision: they should explain what data leakage is, why it matters, and how it affected their results—knowledge they may not have solidified.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Data leakage: why it inflates performance"
+    ]
+  },
+  {
+    "id": 34,
+    "bucket": "write-prose",
+    "intent": "task",
+    "text": "Summarize this paper's methods in 5 bullets for my lit review. [abstract pasted]",
+    "kind": "lookup",
+    "rationale": "User is asking for a factual summary of a paper's methods—a reference task with no real statistical learning opportunity.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 35,
+    "bucket": "write-prose",
+    "intent": "task",
+    "text": "Write speaker notes for my slide showing the ROC curve comparing three churn models.",
+    "kind": "lookup",
+    "rationale": "User is requesting deliverable content (speaker notes) for a presentation slide; understanding ROC curves is assumed or incidental to the task.",
+    "nQuestions": 0,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "ROC threshold and operating point",
+      "AUC as rank-ordering, not absolute performance"
+    ]
+  },
+  {
+    "id": 36,
+    "bucket": "write-prose",
+    "intent": "task",
+    "text": "Reviewer 2 says 'the authors should address potential confounding by indication.' Help me write a response.",
+    "kind": "concept",
+    "rationale": "The user needs to understand what confounding by indication is, why it matters in their study design/analysis, and how to address it in a response—this is a causal inference concept with consequences for their manuscript, not a lookup.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 37,
+    "bucket": "write-prose",
+    "intent": "task",
+    "text": "Make this limitations section more concise. [paragraph pasted]",
+    "kind": "lookup",
+    "rationale": "User is asking for editing/writing help on a limitations section—a concrete task, not a concept that requires understanding why.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 38,
+    "bucket": "write-prose",
+    "intent": "task",
+    "text": "Write a one-paragraph plain-language summary of my capstone for the program showcase: predicting customer churn for a telecom company.",
+    "kind": "lookup",
+    "rationale": "User is asking for writing/communication help on a capstone summary—a straightforward task with no statistical or modeling concept embedded. This is not about understanding churn prediction itself but rather distilling their work into a readable paragraph.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 39,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "What's the pandas function to get the number of unique values per column?",
+    "kind": "lookup",
+    "rationale": "User is asking for a pandas syntax/function name; the underlying concept (counting unique values) is incidental.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 40,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "How do I rotate x-axis labels 45 degrees in matplotlib?",
+    "kind": "lookup",
+    "rationale": "User is asking for matplotlib syntax to rotate axis labels — a pure technical recipe with no statistical or methodological decision behind it.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 41,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "R syntax for a Welch t-test?",
+    "kind": "lookup",
+    "rationale": "User is asking for R function syntax; they already know what a Welch t-test is.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Welch vs. Student t-test assumptions"
+    ]
+  },
+  {
+    "id": 42,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "How do I set a random seed in numpy so results are reproducible?",
+    "kind": "lookup",
+    "rationale": "User is asking for syntax/procedure to set a random seed in numpy; understanding the concept of reproducibility is secondary to needing the specific function call.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Random seed scope and state"
+    ]
+  },
+  {
+    "id": 43,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "What's the dplyr equivalent of pandas groupby().agg()?",
+    "kind": "lookup",
+    "rationale": "User is asking for R/dplyr syntax equivalent to a pandas function they already understand; the conceptual understanding of groupby-aggregation is incidental.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 44,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "How do I get odds ratios instead of coefficients from statsmodels logit?",
+    "kind": "lookup",
+    "rationale": "User is asking for a specific function/syntax to extract odds ratios from a fitted logit model in statsmodels — a factual, technical question about code and output formatting, not about understanding when or why to use odds ratios.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Odds ratio vs. risk ratio interpretation"
+    ]
+  },
+  {
+    "id": 45,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "SQL: how do I get the first row per group in Postgres?",
+    "kind": "lookup",
+    "rationale": "User is asking for SQL syntax to solve a specific data operation; the statistical understanding (grouping, selecting records) is incidental.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Row selection and aggregation logic"
+    ]
+  },
+  {
+    "id": 46,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "Keyboard shortcut to run a cell and insert below in Jupyter?",
+    "kind": "lookup",
+    "rationale": "User is asking for Jupyter syntax (a keyboard shortcut), not a statistical concept.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 47,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "How do I export a data frame to Excel in R without row names?",
+    "kind": "lookup",
+    "rationale": "The user is asking for syntax to export a data frame to Excel—a recipe, not a concept requiring understanding of why or when.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 48,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "What's the argument in sklearn LogisticRegression to turn off regularization?",
+    "kind": "lookup",
+    "rationale": "The user is asking for a specific parameter name/syntax in sklearn; they understand what regularization is and just need the function argument.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Regularization strength in sklearn"
+    ]
+  },
+  {
+    "id": 49,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "How do I make a confusion matrix plot in sklearn?",
+    "kind": "lookup",
+    "rationale": "User is asking for a plotting function/syntax; they already understand confusion matrices (no conceptual confusion shown).",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Classification threshold and class balance"
+    ]
+  },
+  {
+    "id": 50,
+    "bucket": "syntax",
+    "intent": "lookup",
+    "text": "How do I do a left join in data.table?",
+    "kind": "lookup",
+    "rationale": "User is asking for syntax/recipe for a data.table operation; the join mechanics are incidental to their task.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Join type and missing rows"
+    ]
+  },
+  {
+    "id": 51,
+    "bucket": "fact",
+    "intent": "lookup",
+    "text": "What's the formula for the standard error of a proportion?",
+    "kind": "lookup",
+    "rationale": "User is asking for a specific formula; the statistical idea (why that formula works) is not the focus of the question.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 52,
+    "bucket": "fact",
+    "intent": "lookup",
+    "text": "Critical z value for a 99% confidence interval?",
+    "kind": "lookup",
+    "rationale": "User is asking for a specific numerical fact (the critical z value); the concept of confidence intervals and z-tables is incidental to retrieving a value they likely already know how to use.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Confidence level vs. tail probability"
+    ]
+  },
+  {
+    "id": 53,
+    "bucket": "fact",
+    "intent": "lookup",
+    "text": "What does VIF stand for and what cutoff do people use?",
+    "kind": "lookup",
+    "rationale": "User is asking for a definition and a convention (the acronym and a rule of thumb), not the underlying reasoning about why multicollinearity matters or when to act on it.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "When VIF signals multicollinearity"
+    ]
+  },
+  {
+    "id": 54,
+    "bucket": "fact",
+    "intent": "lookup",
+    "text": "Is the Charlson comorbidity index the same as Elixhauser?",
+    "kind": "lookup",
+    "rationale": "The user is asking for a factual distinction between two established clinical risk indices—a definition/taxonomy question with no statistical reasoning required.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "Choice of comorbidity index"
+    ]
+  },
+  {
+    "id": 55,
+    "bucket": "fact",
+    "intent": "lookup",
+    "text": "What's the citation for the original lasso paper?",
+    "kind": "lookup",
+    "rationale": "User is asking for a factual citation—a reference to a published paper. The understanding of lasso regularization is incidental to the lookup.",
+    "nQuestions": 0,
+    "nCallouts": 1,
+    "calloutTitles": [
+      "When to use lasso vs ridge"
+    ]
+  },
+  {
+    "id": 56,
+    "bucket": "env",
+    "intent": "lookup",
+    "text": "pip install pymc fails with 'error: Microsoft Visual C++ 14.0 or greater is required'.",
+    "kind": "lookup",
+    "rationale": "User is reporting a package installation error; the understanding of pymc or Bayesian modeling is incidental.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 57,
+    "bucket": "env",
+    "intent": "lookup",
+    "text": "How do I create a conda environment from a requirements.txt?",
+    "kind": "lookup",
+    "rationale": "User is asking for a procedural command to create a conda environment; no statistical or methodological concept needs understanding.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 58,
+    "bucket": "env",
+    "intent": "lookup",
+    "text": "RStudio won't find my installed packages after I updated R. How do I fix the library path?",
+    "kind": "lookup",
+    "rationale": "User is asking for a technical troubleshooting step (library path configuration) after an R update; the underlying statistical concept is incidental.",
+    "nQuestions": 0,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 59,
+    "bucket": "explain",
+    "intent": "concept",
+    "text": "Why do we divide by n − 1 instead of n for sample variance?",
+    "kind": "concept",
+    "rationale": "This is a foundational statistical idea (Bessel's correction) where understanding the WHY—bias, degrees of freedom, and sampling variability—is essential; a lookup answer ('it's the formula') misses the learning.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 60,
+    "bucket": "explain",
+    "intent": "concept",
+    "text": "What does a p-value actually tell me? I keep seeing people say it's not the probability the null is true.",
+    "kind": "concept",
+    "rationale": "User is asking about the interpretation of a p-value—a foundational statistical idea with widespread misconception—not a lookup of syntax or a formula. This is a core concept question.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 61,
+    "bucket": "explain",
+    "intent": "concept",
+    "text": "Why does logistic regression model log-odds instead of probability directly?",
+    "kind": "concept",
+    "rationale": "The user is asking about a foundational modeling choice in logistic regression — why we transform the outcome using the logit link rather than predicting probability directly. This requires understanding the constraints on probability, properties of linear models, and the role of the link function.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 62,
+    "bucket": "explain",
+    "intent": "concept",
+    "text": "Can you explain the bias-variance tradeoff in terms of my random forest vs a single decision tree?",
+    "kind": "concept",
+    "rationale": "The user is asking for an explanation of a fundamental statistical trade-off and how it manifests in a concrete modeling choice (random forest vs. single tree), which requires understanding why the trade-off exists and how the two algorithms embody it differently.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 63,
+    "bucket": "explain",
+    "intent": "concept",
+    "text": "What's the difference between a confidence interval and a credible interval?",
+    "kind": "concept",
+    "rationale": "The user is asking about the conceptual difference between two statistical inference frameworks, which hinges on understanding prior information, what's random, and philosophical interpretation—not a lookup.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 64,
+    "bucket": "explain",
+    "intent": "concept",
+    "text": "How does regularization actually prevent overfitting?",
+    "kind": "concept",
+    "rationale": "The user is asking for the mechanism behind regularization — a foundational statistical idea involving the bias–variance tradeoff and parameter penalty. Understanding WHY requires walking through the reasoning, not just naming the technique.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 65,
+    "bucket": "explain",
+    "intent": "concept",
+    "text": "What is a collider and why does conditioning on one create bias?",
+    "kind": "concept",
+    "rationale": "The user is asking about a causal inference concept (colliders) and why a statistical operation (conditioning) creates bias — this requires understanding the causal structure and the mechanism, not just a definition.",
+    "nQuestions": 2,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 66,
+    "bucket": "explain",
+    "intent": "concept",
+    "text": "Why do random effects shrink estimates toward the mean?",
+    "kind": "concept",
+    "rationale": "The user is asking for conceptual understanding of a statistical mechanism — why random effects produce shrinkage — which requires understanding the trade-off between partial pooling, variance estimation, and borrowing strength across groups.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 67,
+    "bucket": "which-method",
+    "intent": "concept",
+    "text": "Which test should I use to compare readmission rates between two hospitals?",
+    "kind": "concept",
+    "rationale": "Choosing the right statistical test depends on understanding the data structure, assumptions, and what 'readmission rates' means (binary outcome, counts, time-to-event); this is a decision question, not a lookup.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 68,
+    "bucket": "which-method",
+    "intent": "concept",
+    "text": "Should I use a mixed model or GEE for repeated blood pressure measurements per patient?",
+    "kind": "concept",
+    "rationale": "Choosing between mixed models and GEE requires understanding the trade-offs in how they handle clustering, the assumptions each makes, and what the user wants to estimate — a core modeling decision, not a lookup.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 69,
+    "bucket": "which-method",
+    "intent": "concept",
+    "text": "Is AUC the right metric for my churn model if only 2% of customers churn?",
+    "kind": "concept",
+    "rationale": "The user is asking a decision-driven question about metric choice in an imbalanced classification setting—this is a conceptual trade-off requiring understanding of what AUC measures, what happens under class imbalance, and when AUC may or may not be appropriate.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 70,
+    "bucket": "which-method",
+    "intent": "concept",
+    "text": "Do I need to correct for multiple comparisons if I'm testing 12 secondary outcomes?",
+    "kind": "concept",
+    "rationale": "The user is asking a decision question about statistical practice (whether to apply a correction) that depends on understanding the trade-off between Type I error control and power, the role of primary vs. secondary outcomes, and what 'multiple comparisons' actually corrects for — a conceptual choice, not a lookup.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 71,
+    "bucket": "which-method",
+    "intent": "concept",
+    "text": "Should I report the odds ratio or the risk ratio for readmission? It's about 20% prevalence.",
+    "kind": "concept",
+    "rationale": "The user is asking which metric to report for a binary outcome—this is a conceptual decision about when odds ratios vs. risk ratios are appropriate, not a lookup of a formula or function.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 72,
+    "bucket": "which-method",
+    "intent": "concept",
+    "text": "Paired t-test or Wilcoxon signed-rank for before/after scores from 15 students?",
+    "kind": "concept",
+    "rationale": "The user is asking which test to use for a paired design — a foundational decision that hinges on understanding the assumptions (normality, symmetry) and when each test is appropriate, not just a lookup of function names.",
+    "nQuestions": 2,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 73,
+    "bucket": "which-method",
+    "intent": "concept",
+    "text": "Should tenure be a feature or should I use a survival model for churn instead?",
+    "kind": "concept",
+    "rationale": "The user is asking a modeling choice question that hinges on understanding the structure of their data, the difference between treating tenure as a predictor vs. time-to-event, and the assumptions and benefits of each approach — all conceptual decisions, not a lookup.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 74,
+    "bucket": "which-method",
+    "intent": "concept",
+    "text": "Stepwise selection or lasso for choosing covariates in my readmission model?",
+    "kind": "concept",
+    "rationale": "User is choosing between two feature selection approaches for a predictive model; the answer depends on understanding the statistical and practical trade-offs (bias, stability, interpretability, assumptions) behind each method, not just syntax or a recipe.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 75,
+    "bucket": "interpret",
+    "intent": "concept",
+    "text": "How do I interpret a coefficient of 0.42 on log(income) in a logistic regression?",
+    "kind": "concept",
+    "rationale": "Interpreting a coefficient in logistic regression requires understanding the link between the log-odds scale and probability, and what 'log(income)' scaling does; this is a conceptual interpretation task, not a lookup.",
+    "nQuestions": 2,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 76,
+    "bucket": "interpret",
+    "intent": "concept",
+    "text": "My interaction term is significant but neither main effect is. What does that mean?",
+    "kind": "concept",
+    "rationale": "The user is asking for interpretation of a counterintuitive statistical result—why an interaction can be significant when main effects are not. This requires understanding the meaning of interaction terms, their orthogonality to main effects, and how to interpret coefficients in the presence of interactions.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 77,
+    "bucket": "interpret",
+    "intent": "concept",
+    "text": "The hazard ratio for treatment is 0.7 (0.55–0.89). How do I explain that to a clinician?",
+    "kind": "concept",
+    "rationale": "The user needs to interpret a hazard ratio in a clinically meaningful way — a real understanding task about what the coefficient means, not a lookup.",
+    "nQuestions": 3,
+    "nCallouts": 2,
+    "calloutTitles": [
+      "Proportional hazards assumption",
+      "Hazard vs. risk in clinical language"
+    ]
+  },
+  {
+    "id": 78,
+    "bucket": "interpret",
+    "intent": "concept",
+    "text": "My Q-Q plot curves up at the right end. Is my regression invalid?",
+    "kind": "concept",
+    "rationale": "The user is asking whether a violation of an assumption (normality of residuals) invalidates their regression—a conceptual question about the robustness and practical consequences of regression assumptions, not a lookup of syntax or a formula.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 79,
+    "bucket": "interpret",
+    "intent": "concept",
+    "text": "SHAP says contract_length is the most important feature but its coefficient in the logistic model is small. Which do I believe?",
+    "kind": "concept",
+    "rationale": "The user faces a real interpretability tension: SHAP importance vs. model coefficients measure different things (global marginal contribution vs. conditional effect). This is a conceptual mismatch, not a lookup.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  },
+  {
+    "id": 80,
+    "bucket": "interpret",
+    "intent": "concept",
+    "text": "My R-squared is 0.08 but several predictors are highly significant. Is the model bad?",
+    "kind": "concept",
+    "rationale": "The user is asking about model quality and how to interpret a trade-off between statistical significance and explanatory power—a reasoning question that requires understanding what R² measures, what significance tests (and large n) mean, and how they relate.",
+    "nQuestions": 3,
+    "nCallouts": 0,
+    "calloutTitles": []
+  }
+]
