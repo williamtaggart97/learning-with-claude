@@ -2,18 +2,24 @@
 // (ROUTER_SYSTEM + ROUTER_JSON_SCHEMA from the app worktree) as a brand-new
 // learner, then tallies router kind against the hand-labelled intent.
 //
+// Prompts may carry "turns" (earlier {role,text} turns); the app's explicit-
+// learning signal is computed with the real route-policy code, so run this
+// under tsx from the app checkout:
+//   node --import tsx research/router-mix/classify.mjs [app-checkout] [out-file]
+//
 // Usage: node research/router-mix/classify.mjs [path-to-app-checkout] [out-file]
 //   out-file defaults to results-three-way.json (results.json holds the
 //   original two-way baseline run and is kept for comparison).
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(process.argv[2] ?? path.join(here, "../../../plan-design-context-dec643"));
 const require = createRequire(path.join(appRoot, "package.json"));
 const Anthropic = require("@anthropic-ai/sdk").default;
+const { explicitFraming } = await import(pathToFileURL(path.join(appRoot, "src/lib/pipeline/route-policy.ts")).href);
 
 // API key from the app's .env.local (never printed).
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -64,6 +70,7 @@ const SCHEMA = {
   properties: {
     kind: { type: "string", enum: ["concept", "lookup", "task"] },
     rationale: { type: "string" },
+    closeCall: { type: "boolean" },
     conceptSlugs: { type: "array", items: { type: "string" } },
     framingQuestions: {
       type: "array",
@@ -82,11 +89,16 @@ const SCHEMA = {
     callouts: { type: "array", items: CALLOUT },
     whyCallout: { anyOf: [CALLOUT, { type: "null" }] },
   },
-  required: ["kind", "rationale", "conceptSlugs", "framingQuestions", "skipCallout", "callouts", "whyCallout"],
+  required: ["kind", "rationale", "closeCall", "conceptSlugs", "framingQuestions", "skipCallout", "callouts", "whyCallout"],
   additionalProperties: false,
 };
 
-const userPrompt = (message) => `<concept_catalog>
+const formatTurns = (turns) =>
+  turns.length
+    ? turns.map((t) => `${t.role === "user" ? "USER" : "ASSISTANT"}: ${t.text.length > 600 ? t.text.slice(0, 600) + "…" : t.text}`).join("\n\n")
+    : "(no earlier turns — this is the first message)";
+
+const userPrompt = (message, turns, explicit) => `<concept_catalog>
 ${catalog || "(empty)"}
 </concept_catalog>
 
@@ -95,13 +107,13 @@ ${learnerText}
 </learner_profile>
 
 <recent_conversation>
-(no earlier turns — this is the first message)
+${formatTurns(turns)}
 </recent_conversation>
 
 <new_message>
 ${message}
 </new_message>
-
+${explicit && explicit !== "empty" ? `\n<signals>\nexplicit_framing_request: ${explicit}\n</signals>\n` : ""}
 Classify the new message and produce the JSON.`;
 
 const client = new Anthropic({ maxRetries: 3 });
@@ -110,11 +122,17 @@ const onlyIds = process.env.IDS ? new Set(process.env.IDS.split(",").map(Number)
 const prompts = JSON.parse(fs.readFileSync(path.join(here, "prompts.json"), "utf8")).filter((p) => !onlyIds || onlyIds.has(p.id));
 
 async function route(p) {
+  const turns = p.turns ?? [];
+  const explicit = explicitFraming(p.text, turns);
+  // The app never calls the model for a first-message "I want to learn".
+  if (explicit === "empty") {
+    return { ...p, kind: "concept", explicit, rationale: "(app: asks the learner to describe it, no model call)", nQuestions: 1, nCallouts: 0, calloutTitles: [], whyCallout: null, closeCall: true };
+  }
   const res = await client.messages.create({
     model: routerModel,
     max_tokens: 2000,
     system: ROUTER_SYSTEM,
-    messages: [{ role: "user", content: userPrompt(p.text) }],
+    messages: [{ role: "user", content: userPrompt(p.text, turns, explicit) }],
     output_config: { format: { type: "json_schema", schema: SCHEMA } },
   });
   const text = res.content.filter((b) => b.type === "text").map((b) => b.text).join("");
@@ -122,6 +140,8 @@ async function route(p) {
   return {
     ...p,
     kind: out.kind,
+    explicit,
+    closeCall: out.closeCall,
     rationale: out.rationale,
     nQuestions: out.framingQuestions.length,
     nCallouts: out.callouts.length,
@@ -188,6 +208,18 @@ for (const bucket of [...new Set(ok.map((r) => r.bucket))]) {
   const rows = ok.filter((r) => r.bucket === bucket);
   console.log(`  ${bucket.padEnd(13)} n=${String(rows.length).padEnd(3)} ${KINDS.map((k) => `${k} ${pct(count(rows, k), rows.length).padStart(4)}`).join("   ")}`);
 }
+// Explicit "I want to learn" prompts: each carries expectQ ("1" or "2-3").
+const explicitRows = ok.filter((r) => r.expectQ);
+if (explicitRows.length) {
+  console.log("\nEXPLICIT LEARNING (kind must be concept; question count per tier)");
+  for (const r of explicitRows) {
+    const want = r.expectQ === "1" ? r.nQuestions === 1 : r.nQuestions >= 2 && r.nQuestions <= 3;
+    const pass = r.kind === "concept" && want;
+    console.log(`  ${pass ? "PASS" : "FAIL"} #${r.id} [${r.explicit ?? "none"}] kind=${r.kind} q=${r.nQuestions} (want ${r.expectQ})  ${r.text.slice(0, 60)}`);
+  }
+  console.log(`  ${explicitRows.filter((r) => r.kind === "concept" && (r.expectQ === "1" ? r.nQuestions === 1 : r.nQuestions >= 2 && r.nQuestions <= 3)).length}/${explicitRows.length} pass`);
+}
+
 console.log("\nDISAGREEMENTS (intent != router kind; a task routed to lookup is acceptable, a framed task is not)");
 for (const r of ok) {
   if (r.intent !== r.kind) console.log(`  #${r.id} [${r.intent}->${r.kind}] ${r.text.slice(0, 90)}\n      ${r.rationale}`);

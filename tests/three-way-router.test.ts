@@ -9,7 +9,7 @@ import { buildAnswerRequest } from "@/lib/claude/answerer";
 import { assessorUserPrompt } from "@/lib/claude/prompts";
 import { normalizeRouterOutput, ROUTER_JSON_SCHEMA } from "@/lib/claude/router";
 import { applyConcept, canCreateMastery, type AssessmentJob } from "@/lib/pipeline/assess";
-import { alsoSavedCallouts, asksForDeliverable, featuredCallouts, mentionsDeadline, planRoute } from "@/lib/pipeline/route-policy";
+import { alsoSavedCallouts, asksForDeliverable, explicitFraming, featuredCallouts, mentionsDeadline, planRoute } from "@/lib/pipeline/route-policy";
 import type { RouterResult } from "@/lib/types";
 
 const callout = (title: string, conceptSlug: string) => ({
@@ -415,6 +415,78 @@ test("task mode never creates a mastery (P7), only updates existing ones", async
   const some = fakeTx({ score: 0.5, evidence: [] });
   assert.equal(await applyConcept(some.tx, job, assessed, "t"), "updated");
   assert.deepEqual(some.writes, [["mastery.upsert", 0.55]]);
+});
+
+// ─── Explicit requests to learn ─────────────────────────────────────────────
+
+test("explicitFraming: the message decides the tier; earlier turns only separate followup from empty", () => {
+  for (const m of ["I want to learn", "i want to learn.", "Teach me", "please help me understand", "I want framing", "ask me some questions"]) {
+    assert.equal(explicitFraming(m), "empty", m);
+    assert.equal(explicitFraming(m, [{ role: "assistant", text: "Here is a script" }]), "followup", m);
+  }
+  for (const m of ["I want to learn python", "teach me how APIs work", "My teacher told me to pull NWS data. I want to learn how."]) {
+    assert.equal(explicitFraming(m), "topic", m);
+    assert.equal(explicitFraming(m, [{ role: "user", text: "hi" }]), "topic", m);
+  }
+});
+
+test("explicitFraming: opt-outs and weaker signals do not count", () => {
+  for (const m of [
+    "just give me the code, I don't want to learn this",
+    "no questions please, just answer",
+    "I don't know how to fix this error: KeyError 'a'",
+    "why does my merge duplicate rows?",
+    "write a function that learns a threshold",
+  ]) {
+    assert.equal(explicitFraming(m), null, m);
+  }
+});
+
+test("first-message 'I want to learn': a prompt-back question and a generic skip card, no model output needed", () => {
+  const c = normalizeRouterOutput({ kind: "concept", rationale: "r" }, "I want to learn", "empty");
+  assert.equal(c.kind, "concept");
+  if (c.kind !== "concept") return;
+  assert.equal(c.framingQuestions.length, 1);
+  assert.equal(c.framingQuestions[0].format, "short_answer");
+  assert.equal(c.closeCall, true);
+  assert.equal(c.skipCallout.title, "Getting started");
+});
+
+test("followup 'I want to learn': exactly 1 question even if the model wrote 3", () => {
+  const qs = [1, 2, 3].map((i) => ({ prompt: `Step ${i}?`, format: "short_answer", options: [] }));
+  const c = normalizeRouterOutput(
+    raw({ kind: "concept", framingQuestions: qs, skipCallout: callout("APIs", "apis") }),
+    "i want to learn",
+    "followup",
+  );
+  assert.equal(c.kind, "concept");
+  if (c.kind !== "concept") return;
+  assert.equal(c.framingQuestions.length, 1);
+  assert.equal(c.closeCall, true);
+});
+
+test("explicit request with a topic: full framing kept (2–3), never collapsed to a close call", () => {
+  const qs = [1, 2, 3].map((i) => ({ prompt: `Step ${i}?`, format: "short_answer", options: [] }));
+  const r = normalizeRouterOutput(
+    raw({ kind: "concept", closeCall: true, framingQuestions: qs, skipCallout: callout("APIs", "apis") }),
+    "I want to learn how to pull weather data",
+    "topic",
+  );
+  assert.equal(r.kind, "concept");
+  if (r.kind !== "concept") return;
+  assert.equal(r.framingQuestions.length, 3);
+  assert.equal(r.closeCall, undefined);
+});
+
+test("explicit request beats deadline, cooldown and already-framed", () => {
+  const earlier = [{ conceptSlugs: ["bessel-correction"], status: "answered" }];
+  const plan = planRoute(
+    { ...concept, closeCall: true },
+    { message: "Defense is in 2 days but I want to learn why n-1", earlier, messagesSinceFraming: 1, explicitFraming: true },
+  );
+  assert.equal(plan.downgraded, null);
+  assert.equal(plan.answerMode, null);
+  assert.equal(plan.route.kind, "concept");
 });
 
 // ─── One framing question on a vague / parroted task or lookup ──────────────

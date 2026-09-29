@@ -12,7 +12,7 @@ import { ndjsonResponse } from "@/lib/ndjson";
 import { ASSESSMENT_MAX_WAIT_MS, createAssessmentGate, runAfterStream, type AssessmentGate } from "@/lib/pipeline/assess";
 import { loadCatalog, loadLearnerSnapshot, loadTurns } from "@/lib/pipeline/context";
 import { classifyDigIn, enforceChatRateLimits, titleFromMessage } from "@/lib/pipeline/guards";
-import { alsoSavedCallouts, framingTimerOpen, planRoute } from "@/lib/pipeline/route-policy";
+import { alsoSavedCallouts, explicitFraming, framingTimerOpen, planRoute } from "@/lib/pipeline/route-policy";
 import { answerAndPersist, linkedAbort, touchConversation } from "@/lib/pipeline/stream";
 import { ChatRequestSchema } from "@/lib/schemas";
 import { getSessionUser } from "@/lib/session";
@@ -191,7 +191,12 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
             select: { conceptSlugs: true, status: true },
           })
         : [];
-    const plan = planRoute(route, { message, earlier, messagesSinceFraming });
+    const plan = planRoute(route, {
+      message,
+      earlier,
+      messagesSinceFraming,
+      explicitFraming: explicitFraming(message, history) !== null,
+    });
     if (plan.downgraded) {
       console.info(
         `[chat] framing downgraded (${plan.downgraded}; slugs: ${plan.matchedSlugs.join(", ") || "-"}) → ${plan.answerMode}`,
