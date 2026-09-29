@@ -5,7 +5,7 @@ import "server-only";
 import { FRAMING, MODELS } from "@/config";
 import { callStructured } from "@/lib/claude/client";
 import { formatLearner, ROUTER_SYSTEM, routerUserPrompt, type LearnerSnapshot, type PromptTurn } from "@/lib/claude/prompts";
-import { asksForDeliverable } from "@/lib/pipeline/route-policy";
+import { asksForDeliverable, explicitFraming, type ExplicitFraming } from "@/lib/pipeline/route-policy";
 import { RouterResultSchema } from "@/lib/schemas";
 import type { FramingQuestion, LearnLaterCallout, RouterResult } from "@/lib/types";
 
@@ -126,7 +126,20 @@ export const MAX_CALLOUTS = 3;
  * `message` (the user message) is only used to pick the fallback kind when a
  * concept result has no usable framing.
  */
-export function normalizeRouterOutput(raw: unknown, message = ""): RouterResult {
+/** Stand-ins for an explicit "I want to learn" as the very first message: nothing for the model to build on. */
+const EMPTY_QUESTION: FramingQuestion = {
+  id: "q1",
+  prompt: "What would you like to learn? Describe as much as you can: the topic, what it's for, and where you're starting from.",
+  format: "short_answer",
+};
+const EMPTY_SKIP_CALLOUT: LearnLaterCallout = {
+  title: "Getting started",
+  preview:
+    "Learning mode asks a question or two before answering, so the answer starts where you are. Say what you're working on and it builds from there.",
+  appliedContext: "You asked to learn but haven't named a topic yet.",
+};
+
+export function normalizeRouterOutput(raw: unknown, message = "", explicit: ExplicitFraming | null = null): RouterResult {
   const r = (raw ?? {}) as RawRouter;
   const conceptSlugs = [
     ...new Set((Array.isArray(r.conceptSlugs) ? r.conceptSlugs : []).map((s) => toSlug(str(s))).filter(Boolean)),
@@ -148,9 +161,15 @@ export function normalizeRouterOutput(raw: unknown, message = ""): RouterResult 
     // A close call between concept and lookup is framed with exactly one
     // question: enough to engage the learner, not a quiz. Enforced here even
     // if the model wrote more.
-    const closeCall = r.closeCall === true;
-    const framingQuestions = normalizeQuestions(r.framingQuestions).slice(0, closeCall ? 1 : FRAMING.maxQuestions);
-    const skipCallout = normalizeCallout(r.skipCallout);
+    // An explicit request to learn fixes the tier: no topic in the message →
+    // one question (a close call); a topic named → the full 2–3 question framing.
+    const closeCall = explicit ? explicit !== "topic" : r.closeCall === true;
+    let framingQuestions = normalizeQuestions(r.framingQuestions).slice(0, closeCall ? 1 : FRAMING.maxQuestions);
+    let skipCallout = normalizeCallout(r.skipCallout);
+    if (explicit === "empty") {
+      if (framingQuestions.length === 0) framingQuestions = [EMPTY_QUESTION];
+      skipCallout ??= EMPTY_SKIP_CALLOUT;
+    }
     if (framingQuestions.length >= FRAMING.minQuestions && skipCallout) {
       return RouterResultSchema.parse({
         kind: "concept",
@@ -201,27 +220,55 @@ export const ROUTER_TIMEOUT_MS = 15_000;
 export async function routeMessage(input: RouteInput, signal?: AbortSignal): Promise<RouterResult> {
   const timeout = AbortSignal.timeout(ROUTER_TIMEOUT_MS);
   const callSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
-  try {
-    return await callStructured({
-      label: "router",
+  const explicit = explicitFraming(input.message, input.turns);
+  // First message, just "I want to learn": nothing to build on, so skip the
+  // model and ask the learner to describe what they want to learn.
+  if (explicit === "empty") {
+    return normalizeRouterOutput(
+      { kind: "concept", rationale: "explicit learning request with no topic or history: ask the learner to describe it" },
+      input.message,
+      explicit,
+    );
+  }
+  const call = (retry: boolean) =>
+    callStructured({
+      label: retry ? "router-explicit-retry" : "router",
       model: MODELS.router,
       maxTokens: 2000,
       system: ROUTER_SYSTEM,
       messages: [
         {
           role: "user",
-          content: routerUserPrompt({
-            message: input.message,
-            turns: input.turns.slice(-6),
-            learnerText: formatLearner(input.learner),
-            catalog: input.catalog,
-          }),
+          content:
+            routerUserPrompt({
+              message: input.message,
+              turns: input.turns.slice(-6),
+              learnerText: formatLearner(input.learner),
+              catalog: input.catalog,
+              explicit,
+            }) +
+            (retry
+              ? '\nThe learner explicitly asked to learn, so kind MUST be "concept": follow the explicit learning requests section.'
+              : ""),
         },
       ],
       jsonSchema: ROUTER_JSON_SCHEMA,
-      parse: (raw) => normalizeRouterOutput(raw, input.message),
+      parse: (raw) => normalizeRouterOutput(raw, input.message, explicit),
       signal: callSignal,
     });
+  try {
+    const first = await call(false);
+    // The learner asked to learn but the model answered task/lookup (or its
+    // framing was unusable): ask once more with the kind pinned.
+    if (explicit && first.kind !== "concept") {
+      try {
+        const second = await call(true);
+        if (second.kind === "concept") return second;
+      } catch (err) {
+        if (signal?.aborted) throw err;
+      }
+    }
+    return first;
   } catch (err) {
     // Only a request abort (client disconnect) propagates; a timeout or any
     // model/API failure degrades to a plain lookup.

@@ -170,6 +170,65 @@ export function reportsProblem(message: string): boolean {
   return PROBLEM_RE.test(message);
 }
 
+// ─── Explicit learning requests ─────────────────────────────────────────────
+
+/**
+ * The learner asks to learn or be walked through something ("I want to
+ * learn", "help me understand", "teach me", "ask me questions", "framing").
+ * Deliberately narrow: weaker signals ("I don't know how") are left to the
+ * router prompt, because "I don't know how to fix this error" is a task.
+ */
+const LEARN_REQUEST_RE = new RegExp(
+  [
+    String.raw`\bi(?:['’]d|\s+would)?\s+(?:really\s+|actually\s+|just\s+)?(?:want|wanna|like|need|hope)\s+to\s+(?:actually\s+|really\s+)?(?:learn|understand)\b`,
+    String.raw`\bi(?:['’]m|\s+am)\s+(?:trying|here)\s+to\s+(?:learn|understand)\b`,
+    String.raw`\b(?:help\s+me|let['’]?s|let\s+me)\s+(?:to\s+)?(?:actually\s+)?(?:learn|understand)\b`,
+    String.raw`\bteach\s+me\b`,
+    String.raw`\bwalk\s+me\s+through\b`,
+    String.raw`\bask\s+me\s+(?:some\s+|a\s+few\s+|the\s+)?(?:framing\s+|guiding\s+)?questions?\b`,
+    String.raw`\b(?:i\s+(?:want|need)|give\s+me|use|with)\s+(?:the\s+)?framing\b`,
+    String.raw`\bframing\s+questions?\b`,
+  ].join("|"),
+  "i",
+);
+
+/** "just answer", "no questions": the learner declines framing, so no explicit request. */
+const LEARN_OPT_OUT_RE = new RegExp(
+  [
+    String.raw`\b(?:don['’]?t|do\s+not)\s+(?:actually\s+)?(?:want|need)\s+to\s+(?:learn|understand)\b`,
+    String.raw`\bjust\s+(?:give|answer|tell|do|write|fix)\b`,
+    String.raw`\b(?:no|skip|without|stop\s+with)\s+(?:the\s+)?(?:framing|questions)\b`,
+  ].join("|"),
+  "i",
+);
+
+/** Words that carry no topic once the request phrase is removed. */
+const FILLER = new Set(
+  "a an the this that it its to of about how what why more some something anything things stuff please really actually just so ok okay hi hey and or but literally all everything".split(" "),
+);
+
+export type ExplicitFraming = "empty" | "followup" | "topic";
+
+/**
+ * Did the learner explicitly ask to learn? The message text decides the tier:
+ * - `topic`: it names a topic or situation once the request phrase is removed
+ *   → 2–3 framing questions.
+ * - `followup`: it names none ("I want to learn") but the conversation has
+ *   earlier turns → 1 question built from that conversation.
+ * - `empty`: no topic and no earlier turns → nothing to frame; the app asks
+ *   the learner to describe what they want to learn (no model call).
+ */
+export function explicitFraming(message: string, priorTurns: readonly unknown[] = []): ExplicitFraming | null {
+  if (!LEARN_REQUEST_RE.test(message) || LEARN_OPT_OUT_RE.test(message)) return null;
+  const rest = message
+    .toLowerCase()
+    .replace(LEARN_REQUEST_RE, " ")
+    .split(/[^a-z0-9']+/)
+    .filter((w) => w && !FILLER.has(w));
+  if (rest.length > 0) return "topic";
+  return priorTurns.length > 0 ? "followup" : "empty";
+}
+
 // ─── Framing policy ─────────────────────────────────────────────────────────
 
 /** How an immediate (non-framed) answer is written. See MODE_INSTRUCTIONS. */
@@ -222,7 +281,8 @@ export function slotCandidates(route: RouterResult): SlotCandidates {
  * Decide how the router's result is handled (the chat pipeline's single
  * entry point for policy — exported so the wiring is testable):
  * - Non-concept results pass through: lookup → "lookup" mode, task → "task".
- * - Concept + deadline (L4, checked first) → answered now. If the message
+ * - Concept + an explicit request to learn → framed as asked, never downgraded.
+ * - Concept + deadline (L4) → answered now. If the message
  *   asks for a deliverable it's a task; otherwise "direct" mode: a concise,
  *   complete concept answer (the route stays lookup-shaped). The skipCallout
  *   is the saved item.
@@ -243,6 +303,11 @@ export function planRoute(
      * current one; null/undefined when it has never been framed.
      */
     messagesSinceFraming?: number | null;
+    /**
+     * The learner explicitly asked to learn (see explicitFraming). Their
+     * request outranks the deadline, cooldown and once-per-topic downgrades.
+     */
+    explicitFraming?: boolean;
   },
 ): RoutePlan {
   if (route.kind !== "concept") {
@@ -262,6 +327,11 @@ export function planRoute(
       candidates: slotCandidates(next),
       droppedWhy,
     };
+  }
+
+  // An explicit request to learn is honored as asked: no downgrade applies.
+  if (ctx.explicitFraming) {
+    return { route, answerMode: null, downgraded: null, matchedSlugs: [], persist: [], candidates: NO_CANDIDATES, droppedWhy: false };
   }
 
   if (mentionsDeadline(ctx.message)) {
