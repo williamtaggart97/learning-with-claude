@@ -51,7 +51,9 @@ export function buildAnswerRequest(input: AnswerInput): { system: string; messag
       finalContent = framingAnswerUserContent(input.message, formatFramingQA(input.questions, input.responses));
       break;
     case "dig_in":
-      finalContent = digInUserContent({ kickoffMessage: input.message, item: input.item, sourceTurns: input.sourceTurns });
+      finalContent = digInUserContent({ kickoffMessage: input.message, item: input.item, sourceTurns: input.sourceTurns,
+        concepts: input.learner.concepts,
+      });
       break;
     case "apply":
       finalContent = applyUserContent(input.message, input.item);

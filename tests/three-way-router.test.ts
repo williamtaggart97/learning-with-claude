@@ -457,3 +457,40 @@ test("framed task answer follows the task rules and hides project context; frame
   assert.match(lookup.system, /quick lookup/);
   assert.match(lookup.system, /Secret Q3 launch/);
 });
+
+// ─── Dig-in: profile connections + closing framing questions ────────────────
+
+test("dig-in answer sees the learner's other concepts and always ends with framing questions", () => {
+  const item = { title: "Bessel's correction", preview: "p", appliedContext: "a", conceptSlug: "bessel-correction" };
+  const concepts = [
+    { slug: "bessel-correction", name: "Bessel's correction", score: 0.3 },
+    { slug: "sampling-distribution", name: "Sampling distributions", score: 0.6 },
+    { slug: "welch-t-test", name: "Welch t-test", score: 0.8 },
+  ];
+  const { system, messages } = buildAnswerRequest({
+    mode: "dig_in",
+    learner: { ...learner, concepts },
+    history: [],
+    message: "Let's dig into it.",
+    item,
+    sourceTurns: [],
+  });
+  const final = String(messages.at(-1)?.content);
+  assert.match(final, /<related_concepts>[\s\S]*Sampling distributions \(sampling-distribution\): developing[\s\S]*Welch t-test \(welch-t-test\): solid/);
+  assert.doesNotMatch(final.split("<related_concepts>")[1].split("</related_concepts>")[0], /Bessel/);
+  assert.match(final, /Their mastery of it: shaky/);
+  assert.match(system, /Finish with framing questions, ALWAYS/);
+  assert.match(system, /NEVER reveal the answer/);
+});
+
+test("dig-in with no other concepts says so instead of inventing connections", () => {
+  const { messages } = buildAnswerRequest({
+    mode: "dig_in",
+    learner,
+    history: [],
+    message: "Let's dig in.",
+    item: { title: "T", preview: "p", appliedContext: "a", conceptSlug: null },
+    sourceTurns: [],
+  });
+  assert.match(String(messages.at(-1)?.content), /<related_concepts>\n\(none yet\)\n<\/related_concepts>/);
+});
