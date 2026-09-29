@@ -11,6 +11,7 @@ import {
   formatLearner,
   framingAnswerUserContent,
   type AnswerMode,
+  type FramedDeliver,
   type LearnerSnapshot,
   type PromptTurn,
 } from "@/lib/claude/prompts";
@@ -24,7 +25,7 @@ export type AnswerInput = {
   message: string;
 } & (
   | { mode: "lookup" | "task" | "direct" | "skip" }
-  | { mode: "framing"; questions: FramingQuestion[]; responses: FramingResponse[] }
+  | { mode: "framing"; questions: FramingQuestion[]; responses: FramingResponse[]; deliver?: FramedDeliver }
   | {
       mode: "dig_in";
       item: { title: string; preview: string; appliedContext: string; conceptSlug: string | null };
@@ -68,7 +69,8 @@ export function buildAnswerRequest(input: AnswerInput): { system: string; messag
   }));
   messages.push({ role: "user", content: finalContent });
 
-  return { system: answererSystem(mode, formatLearner(learnerForMode(input))), messages };
+  const deliver = input.mode === "framing" ? input.deliver : undefined;
+  return { system: answererSystem(mode, formatLearner(learnerForMode(input)), deliver), messages };
 }
 
 /**
@@ -77,7 +79,8 @@ export function buildAnswerRequest(input: AnswerInput): { system: string; messag
  * didn't stop project details leaking in as "e.g." hints. Field is kept.
  */
 function learnerForMode(input: AnswerInput): LearnerSnapshot {
-  if (input.mode !== "task" || !input.learner.context) return input.learner;
+  const task = input.mode === "task" || (input.mode === "framing" && input.deliver === "task");
+  if (!task || !input.learner.context) return input.learner;
   return { ...input.learner, context: { ...input.learner.context, projects: [], dataTypes: [], notes: null } };
 }
 
@@ -88,7 +91,7 @@ function learnerForMode(input: AnswerInput): LearnerSnapshot {
 export function streamAnswer(input: AnswerInput, signal?: AbortSignal): AsyncGenerator<string, void, undefined> {
   const { system, messages } = buildAnswerRequest(input);
   // Lookups and direct (deadline) concept answers are short by design.
-  const quick = input.mode === "lookup" || input.mode === "direct";
+  const quick = input.mode === "lookup" || input.mode === "direct" || (input.mode === "framing" && input.deliver === "lookup");
   return streamText({
     model: MODELS.answerer,
     // Adaptive thinking (set explicitly in streamText) shares max_tokens with
