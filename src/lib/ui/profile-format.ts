@@ -145,7 +145,7 @@ export function summarizeStyle(style: LearningStyleDTO): StyleSummaryLine[] {
 
 // ─── Mastery (P1) ───────────────────────────────────────────────────────────
 
-/** Same cut points as suggested topics (src/lib/profile.ts): < 0.5 shaky, ≥ 0.75 solid. */
+/** Same cut points as suggested topics (src/lib/suggested-topics.ts): < 0.5 shaky, ≥ 0.75 solid. */
 export type MasteryBand = "low" | "mid" | "high";
 
 export function masteryBand(score: number): MasteryBand {
