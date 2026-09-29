@@ -93,7 +93,7 @@
  *       Persist the answer message, its ONE featured Learn It Later item
  *       (R13, L5, E3) and — only while the experiment is active — the slot
  *       impression first, then emit `callouts` (a one-item list of the
- *       featured LearnLaterItemDTO; omitted for the "none" control), then
+ *       featured LearnLaterItemDTO plus any also-saved items), then
  *       `slot` (R15, active only), then `done`. Inactive: the featured item
  *       is the router's top pick and the stream is exactly
  *       … → callouts? → done. Active: the featured item is drawn per E2 (see
@@ -244,9 +244,11 @@
  *       card / walkthrough / quickcheck / apply: `callouts` = [the featured
  *         item] (backward compat) AND `slot`. The UI renders the slot and
  *         ignores `callouts` whenever a `slot` event (or data.slot) exists.
- *       none (control): NO `callouts` event, then `slot` with variant
- *         "none" — render nothing. History matches: data.callouts is [] and
- *         data.slot.variant is "none".
+ *       none (control): `callouts` as above, then `slot` with variant
+ *         "none" — render only a passive "Saved to Learn It Later" line.
+ *       Every answer also saves the router's other candidates (≤ 3 items in
+ *         all, alsoSavedCallouts); `callouts` lists them after the featured
+ *         item and the UI shows them as "Also saved" chips under the slot.
  *     The item shown is the one R13 saves: when a queued item already covers
  *     the featured callout (findReusableLearnLaterItem, resolved at draw
  *     time), the payload is generated from THAT item's title / preview /
@@ -437,7 +439,7 @@ export interface CalloutsEvent {
  * before `done` on lookup / task / direct answers that have a featured hidden
  * decision — only while EXPERIMENT.active. Already persisted (SlotImpression +
  * the E3 Learn It Later item). When present, render it instead of `callouts`;
- * for variant "none" there is no `callouts` event and nothing is rendered.
+ * for variant "none" only a passive saved-item line is rendered.
  */
 export interface SlotEvent {
   type: "slot";

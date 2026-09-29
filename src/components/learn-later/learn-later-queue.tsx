@@ -88,7 +88,7 @@ export function LearnLaterQueue() {
             <p className="mx-auto mt-1 max-w-[17rem] text-xs leading-relaxed text-ink-muted">
               {dugIn.length
                 ? "New ideas land here when you skip framing questions or when Claude spots a decision worth understanding."
-                : "When you choose “just answer” or Claude spots a hidden decision in your work, it lands here to dig into later."}
+                : "When you choose “just answer” or Claude spots a concept behind your question, it lands here to dig into later."}
             </p>
           </div>
         ) : (
@@ -180,7 +180,34 @@ function useItemActions(item: LearnLaterItemDTO, nextFocusId: string | null = nu
   return { busy, note, onDigIn, onStatus };
 }
 
-function QueueCard({ item, nextFocusId }: { item: LearnLaterItemDTO; nextFocusId: string | null }) {
+/**
+ * The newest queued concepts as Dig in cards, for the top of the Profile tab.
+ * Lookups and tasks answer straight away, so this is where the learner is
+ * offered the idea behind them without having been quizzed first.
+ */
+export function DigInSuggestions({ limit = 3 }: { limit?: number }) {
+  const { profile } = useProfile();
+  const items = profile.learnLater.filter((i) => i.status === "queued").slice(0, limit);
+  const headingId = useId();
+  if (items.length === 0) return null;
+  return (
+    <section aria-labelledby={headingId} className="space-y-2.5">
+      <h3 id={headingId} className="inline-flex items-center gap-1.5 font-serif text-base font-medium text-learn-900">
+        <SparkIcon className="size-4 text-learn-600" />
+        Ready to dig into
+      </h3>
+      <ul className="space-y-2.5">
+        {items.map((item) => (
+          <li key={item.id}>
+            <QueueCard item={item} nextFocusId={null} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function QueueCard({ item, nextFocusId }: { item: LearnLaterItemDTO; nextFocusId: string | null }) {
   const { busy, note, onDigIn, onStatus } = useItemActions(item, nextFocusId);
   const { register } = useContext(QueueFocusContext);
   return (

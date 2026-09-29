@@ -112,6 +112,12 @@ export const ConceptRouterResultSchema = z.object({
   /** 1–3 framing questions. */
   framingQuestions: FramingQuestionsSchema,
   /**
+   * A close call between concept and lookup, framed with exactly one question.
+   * Unlike a full framing, it may follow an earlier framing of the same concept
+   * in the conversation (a light poke at a new angle; see planRoute).
+   */
+  closeCall: z.boolean().optional(),
+  /**
    * The Learn It Later card queued (origin "skipped") if the user chooses
    * "just answer". Stored on FramingExchange.skipCallout.
    */

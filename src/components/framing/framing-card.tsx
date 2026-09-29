@@ -84,11 +84,14 @@ export function FramingCard({
             Learning mode
           </p>
           <h2 id={headingId} className="mt-2.5 font-serif text-xl leading-snug font-medium text-learn-900">
-            Before I answer — a few questions to frame this
+            {questions.length === 1 ? "Before I answer — one quick question" : "Before I answer — a few questions to frame this"}
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-learn-700">
-            These build toward the answer, step by step. Answer what you can — “I don’t know” is always a fine answer,
-            and it helps me pitch the explanation right.
+            {questions.length === 1
+              ? "It takes a moment and helps me pitch the explanation right. "
+              : "These build toward the answer, step by step. "}
+            Answer what you can — “I don’t know” is always a fine answer
+            {questions.length === 1 ? "." : ", and it helps me pitch the explanation right."}
           </p>
         </header>
 

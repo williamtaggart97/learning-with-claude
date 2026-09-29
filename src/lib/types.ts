@@ -204,9 +204,9 @@ export interface AnswerMessageDTO extends MessageDTOBase {
      * Absent/null for answers without a slot (framing, skip, dig-in, apply,
      * stopped answers, answers with no hidden decision, and every answer while
      * the experiment is inactive). When present, the UI renders the slot
-     * INSTEAD of `callouts`: for card / walkthrough / quickcheck / apply,
-     * `callouts` holds the same item (backward compat); for "none" (control)
-     * `callouts` is EMPTY and nothing is rendered.
+     * INSTEAD of the featured item in `callouts`; other saved items in
+     * `callouts` are listed as "Also saved". For "none" (control) only a
+     * passive saved-item line is rendered.
      */
     slot?: SlotDTO | null;
   };

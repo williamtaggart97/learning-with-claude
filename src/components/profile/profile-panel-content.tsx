@@ -5,7 +5,7 @@
 //   Tier 2 — tabs: Profile (editable + suggested topics) · Learn It Later
 // Reads the live profile store, so it refreshes after answers / polling.
 import { useId, useRef, useState } from "react";
-import { LearnLaterQueue } from "@/components/learn-later/learn-later-queue";
+import { DigInSuggestions, LearnLaterQueue } from "@/components/learn-later/learn-later-queue";
 import { useProfile, useTierUnlocked } from "@/lib/client/profile-store";
 import type { ProfileDTO } from "@/lib/types";
 import { ConceptsSection } from "./concepts-section";
@@ -48,6 +48,7 @@ export function ProfilePanelContent() {
           t === "profile" ? (
             <div className="space-y-7 p-4">
               <TierIntro profile={profile} />
+              <DigInSuggestions />
               {profile.tier >= 2 && <SuggestedTopics topics={profile.suggestedTopics} />}
               <StyleSection style={profile.learningStyle} editable={profile.tier >= 2} />
               <ConceptsSection concepts={profile.concepts} />
