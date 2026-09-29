@@ -42,9 +42,13 @@
     "dotenv": "18.0.4",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "hast-util-to-text": "4.0.2",
     "prisma": "7.10.0",
+    "remark-parse": "11.0.0",
+    "remark-rehype": "11.1.2",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "unified": "11.0.5"
   }
 }

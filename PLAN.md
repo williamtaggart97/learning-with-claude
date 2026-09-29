@@ -15,8 +15,8 @@ Every decision settled during design, grouped by area. For the narrative overvie
 
 | # | Decision | Detail |
 |---|----------|--------|
-| U1 | Domain: data science and statistics | |
-| U2 | Target user: grad student | Under deadline pressure, but genuinely interested in understanding the material. Carries over to a working professional in a new field. |
+| U1 | Domain: any field (revised) | Prompts assume nothing about the user's field and infer it from the profile and conversation. Data science/statistics (Dev) and marketing (Maya) are the seeded examples, and the concept catalog is seeded for those two. |
+| U2 | Target user: anyone building skills for study or work (revised) | Students and working professionals alike. Often under time pressure, but genuinely want to understand what they're learning and apply it to real tasks. |
 | U3 | Lives inside chat as a Claude add-on | Users come for answers; Learning mode promotes deeper thinking through nudges, questions and other interactions. |
 | U4 | The task still gets done, but learning is the emphasis | The product leads with growth rather than just answers. |
 
@@ -85,7 +85,7 @@ Every decision settled during design, grouped by area. For the narrative overvie
 | X1 | No auth | |
 | X2 | Shared passcode | Checked in middleware on the hosted app. |
 | X3 | Per-user rate limit | Stored in Postgres, to protect the API key. |
-| X4 | Three seeded personas, freely switchable | **Maya** (super user, Tier 2): MPH epidemiology, readmissions thesis, ~12 concepts, 5 Learn It Later items, 4–5 past conversations. **Dev** (almost unlocked): MS data science, churn capstone, 4/5 framing exchanges, ~2 past conversations. **Sam** (brand new): empty state. |
+| X4 | Three seeded personas, freely switchable | **Maya** (super user, Tier 2): junior marketer ~10 months into her first job at Quillhaven, a small DTC home-textiles brand; owns email and helps with paid social (Klaviyo, Meta Ads Manager, GA4, Google Sheets). Projects: a welcome-series subject-line A/B test, a monthly campaign report, and the Meta vs. Google budget split (attribution). 15 concepts, 5 Learn It Later items, 5 past conversations. **Dev** (almost unlocked): MS data science, churn capstone, 4/5 framing exchanges, ~2 past conversations. **Sam** (brand new): empty state; nothing is known about him or his field, so he sees field-neutral starter prompts. |
 | X5 | Isolated per browser session | Personas are cloned per session via a cookie, so each reviewer starts clean. |
 | X6 | "Reset this persona" button | Re-seeds the current persona. |
 | X7 | Unlock celebration | A clear reveal when Dev crosses the Tier 1 threshold. |

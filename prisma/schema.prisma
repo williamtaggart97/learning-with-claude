@@ -276,7 +276,7 @@ model LearningStyle {
 model UserContext {
   id         String   @id @default(cuid())
   userId     String   @unique
-  /// e.g. "MPH, epidemiology"
+  /// e.g. "Marketing associate, DTC e-commerce"
   field      String?
   projects   String[] @default([])
   dataTypes  String[] @default([])

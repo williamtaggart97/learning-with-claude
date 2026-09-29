@@ -7,7 +7,7 @@ export const PERSONAS: Record<PersonaKey, PersonaSummary> = {
   maya: {
     key: "maya",
     displayName: "Maya",
-    tagline: "MPH epidemiology · readmissions thesis · profile unlocked",
+    tagline: "Junior marketer · email & paid social · profile unlocked",
   },
   dev: {
     key: "dev",
