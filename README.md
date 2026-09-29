@@ -87,9 +87,9 @@ Dev-only helper: open `/?slotVariant=quickcheck` (or `card`, `walkthrough`, `app
 ## Deployment (Vercel + Neon)
 
 1. **Neon.** Production uses the project's `production` branch. Use a separate branch (e.g. `dev`) for local work and Vercel **Preview** deployments.
-2. **Vercel.** Import the GitHub repo. [`vercel.json`](vercel.json) sets the build command to `npm run build:vercel`, which runs `prisma generate && next build` and then `prisma migrate deploy` **only when `VERCEL_ENV=production`**. Preview builds never migrate. Migrating in production needs `DIRECT_URL`, and the build fails if it's missing.
+2. **Vercel.** Import the GitHub repo. [`vercel.json`](vercel.json) sets the build command to `npm run build:vercel`, which runs `prisma generate && next build` and then `prisma migrate deploy` and `npm run db:seed` **only when `VERCEL_ENV=production`**. Preview builds never migrate or seed. Production needs `DIRECT_URL`, and the build fails if it's missing.
 3. **Environment variables.** Set them in *Project → Settings → Environment Variables* (full list below). Scope `DATABASE_URL` / `DIRECT_URL` to **Production** with the `production` branch URLs. If you enable Preview deployments, give Preview the `dev` branch URLs so previews never read or write production data.
-4. **First deploy: migrate and seed production once** from your machine (commands below), then deploy. Later deploys apply new migrations automatically. Re-seeding is only needed when the seed data changes. It's idempotent and only rewrites persona templates.
+4. **Every production deploy migrates and seeds.** The seed is idempotent: it upserts the concept catalog (never deleting) and rewrites only the persona templates, each in one transaction. Session clones are untouched. To migrate or seed without deploying, use the commands below.
 5. **Passcode.** Choose `DEMO_PASSCODE` and share it with reviewers. Changing `DEMO_PASSCODE` or `PASSCODE_SECRET` signs everyone out.
 
 **Function limits.** The streaming routes set `maxDuration = 300`, which the Hobby plan allows (300 s with Fluid compute, the default) as do Pro and Enterprise. The background assessor runs in `after()`, which Vercel supports via `waitUntil`, within the same limit.
@@ -113,9 +113,9 @@ Dev-only helper: open `/?slotVariant=quickcheck` (or `card`, `walkthrough`, `app
 
 If `DEMO_PASSCODE` or `PASSCODE_SECRET` is missing in production, the app **fails closed**: pages show a misconfiguration notice and APIs return 503.
 
-### Migrate and seed the production branch
+### Migrate and seed the production branch manually
 
-Fetch the connection string into your shell without printing it, run the migration and seed, then clear it. Both `prisma.config.ts` and the seed script prefer `DIRECT_URL`, and variables already in the environment take precedence over `.env.local`.
+Production deploys do this for you. To run it by hand, fetch the connection string into your shell without printing it, run the migration and seed, then clear it. Both `prisma.config.ts` and the seed script prefer `DIRECT_URL`, and variables already in the environment take precedence over `.env.local`.
 
 ```bash
 export DIRECT_URL="$(npx -y neon@latest cs production --project-id <project-id> \
