@@ -29,10 +29,16 @@ if (!sys) throw new Error("ROUTER_SYSTEM not found in prompts.ts");
 const configSrc = fs.readFileSync(path.join(appRoot, "src/config.ts"), "utf8");
 const minQ = configSrc.match(/minQuestions:\s*(\d+)/)[1];
 const maxQ = configSrc.match(/maxQuestions:\s*(\d+)/)[1];
+// ROUTER_SYSTEM interpolates the shared framing rules; inline them too.
+const rules = promptsSrc.match(/export const FRAMING_QUESTION_RULES = `([\s\S]*?)`;/);
+if (!rules) throw new Error("FRAMING_QUESTION_RULES not found in prompts.ts");
 const ROUTER_SYSTEM = sys[1]
+  .replace("${FRAMING_QUESTION_RULES}", rules[1])
   .replaceAll("${FRAMING.minQuestions}", minQ)
   .replaceAll("${FRAMING.maxQuestions}", maxQ)
   .replace(/\\`/g, "`");
+const unfilled = ROUTER_SYSTEM.match(/\$\{[^}]*\}/g);
+if (unfilled) throw new Error(`ROUTER_SYSTEM has unfilled placeholders: ${[...new Set(unfilled)].join(", ")}`);
 const routerModel = process.env.ROUTER_MODEL || configSrc.match(/router:\s*process\.env\.ROUTER_MODEL \|\| "([^"]+)"/)[1];
 
 const catalogSrc = fs.readFileSync(path.join(appRoot, "src/lib/concept-catalog.ts"), "utf8");

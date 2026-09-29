@@ -87,5 +87,32 @@
   {"id": 77, "bucket": "interpret", "intent": "concept", "text": "The hazard ratio for treatment is 0.7 (0.55–0.89). How do I explain that to a clinician?"},
   {"id": 78, "bucket": "interpret", "intent": "concept", "text": "My Q-Q plot curves up at the right end. Is my regression invalid?"},
   {"id": 79, "bucket": "interpret", "intent": "concept", "text": "SHAP says contract_length is the most important feature but its coefficient in the logistic model is small. Which do I believe?"},
-  {"id": 80, "bucket": "interpret", "intent": "concept", "text": "My R-squared is 0.08 but several predictors are highly significant. Is the model bad?"}
+  {"id": 80, "bucket": "interpret", "intent": "concept", "text": "My R-squared is 0.08 but several predictors are highly significant. Is the model bad?"},
+
+  {"id": 81, "bucket": "compare", "intent": "concept", "text": "Roth vs traditional IRA — which makes more sense for a grad student?"},
+  {"id": 82, "bucket": "compare", "intent": "concept", "text": "why did the Roman empire last longer in the east than the west"},
+  {"id": 83, "bucket": "compare", "intent": "concept", "text": "is renting or buying better in a high cost city"},
+  {"id": 84, "bucket": "compare", "intent": "concept", "text": "postgres vs mongodb for storing survey responses?"},
+  {"id": 85, "bucket": "compare", "intent": "concept", "text": "why was 3.5 sonnet better than claude 1"},
+  {"id": 86, "bucket": "compare", "intent": "concept", "text": "what's the difference between a random forest and gradient boosting"},
+  {"id": 87, "bucket": "compare", "intent": "concept", "text": "why do espresso and drip coffee taste so different"},
+  {"id": 88, "bucket": "compare-fact", "intent": "lookup", "text": "which came out first, R or Python?"},
+  {"id": 89, "bucket": "compare-fact", "intent": "lookup", "text": "is the default ddof 0 in numpy std and 1 in pandas std?"},
+  {"id": 90, "bucket": "compare-fact", "intent": "lookup", "text": "which is bigger, the Pacific or the Atlantic?"},
+
+  {"id": 91, "bucket": "lookup-concept", "intent": "lookup", "text": "what claude models are there"},
+  {"id": 92, "bucket": "lookup-concept", "intent": "lookup", "text": "what's the critical z value for a 99% CI"},
+  {"id": 93, "bucket": "lookup-concept", "intent": "lookup", "text": "what's the current fed funds rate"},
+  {"id": 94, "bucket": "lookup-concept", "intent": "lookup", "text": "keyboard shortcut to comment out lines in RStudio"},
+
+  {"id": 95, "bucket": "pro-task", "intent": "task", "text": "Can you look over this NDA before I sign it? Key clause: \"Recipient shall not, for 24 months after termination, solicit or accept business from any client of the Company.\""},
+  {"id": 96, "bucket": "pro-task", "intent": "task", "text": "Tighten this outline for my thesis defense talk: 1. motivation 2. lit review 3. data 4. methods 5. results 6. limitations 7. future work"},
+  {"id": 97, "bucket": "pro-task", "intent": "task", "text": "Rewrite my LinkedIn headline so it doesn't sound so junior: \"Aspiring data scientist | MS student | Python enthusiast\""},
+  {"id": 98, "bucket": "pro-task", "intent": "task", "text": "Draft a reply to the recruiter countering their $95k offer — I was hoping for $110k"},
+  {"id": 99, "bucket": "pro-concept", "intent": "concept", "text": "Why are non-competes unenforceable in some states but not others?"},
+  {"id": 100, "bucket": "pro-concept", "intent": "concept", "text": "how should I structure a 10-minute talk for people who don't know statistics?"},
+  {"id": 101, "bucket": "pro-concept", "intent": "concept", "text": "why do consulting decks put the conclusion in the slide title?"},
+  {"id": 102, "bucket": "pro-concept", "intent": "concept", "text": "is it better to negotiate salary over email or on a call?"},
+  {"id": 103, "bucket": "pro-lookup", "intent": "lookup", "text": "how do I add speaker notes in Google Slides?"},
+  {"id": 104, "bucket": "pro-lookup", "intent": "lookup", "text": "what's the usual word limit for a conference abstract?"}
 ]
