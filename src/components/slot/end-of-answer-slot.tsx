@@ -50,8 +50,26 @@ export function EndOfAnswerSlot({ slot, ...h }: { slot: SlotDTO } & SlotHandlers
     case "apply":
       return <ApplySlot slot={slot} {...h} />;
     case "none":
-      return null;
+      return <SavedNote slot={slot} />;
   }
+}
+
+/**
+ * Control arm (E): no box and no action, but the user is still told what was
+ * saved. Saving something to their profile without saying so is not an option.
+ */
+function SavedNote({ slot }: { slot: Variant<"none"> }) {
+  const { profile } = useProfile();
+  const item = liveLearnLaterItem(profile, slot.item);
+  if (item.status === "dismissed") return null;
+  return (
+    <p data-slot="end-of-answer" className="mt-4 inline-flex max-w-full items-center gap-1.5 text-xs text-learn-700">
+      <BookmarkIcon className="size-3.5 shrink-0" aria-hidden="true" />
+      <span className="min-w-0">
+        Saved to Learn It Later: <span className="font-semibold">{item.title}</span>
+      </span>
+    </p>
+  );
 }
 
 // ─── Shared pieces ──────────────────────────────────────────────────────────

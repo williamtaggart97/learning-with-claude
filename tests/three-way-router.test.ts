@@ -9,7 +9,7 @@ import { buildAnswerRequest } from "@/lib/claude/answerer";
 import { assessorUserPrompt } from "@/lib/claude/prompts";
 import { normalizeRouterOutput, ROUTER_JSON_SCHEMA } from "@/lib/claude/router";
 import { applyConcept, canCreateMastery, type AssessmentJob } from "@/lib/pipeline/assess";
-import { asksForDeliverable, featuredCallouts, mentionsDeadline, planRoute } from "@/lib/pipeline/route-policy";
+import { alsoSavedCallouts, asksForDeliverable, featuredCallouts, mentionsDeadline, planRoute } from "@/lib/pipeline/route-policy";
 import type { RouterResult } from "@/lib/types";
 
 const callout = (title: string, conceptSlug: string) => ({
@@ -85,6 +85,36 @@ test("concept with unusable framing degrades to task for a deliverable, else loo
   assert.deepEqual(featuredCallouts(t).map((x) => x.conceptSlug), ["odds-ratio"]);
 });
 
+test("close call: a concept keeps exactly 1 framing question, a clear concept keeps up to 3", () => {
+  assert.ok((ROUTER_JSON_SCHEMA.required as string[]).includes("closeCall"));
+  const questions = ["What is a debt constant?", "Who bears the risk?", "What happens to DSCR?", "What is a balloon?"].map((prompt) => ({
+    prompt,
+    format: "short_answer",
+    options: [],
+  }));
+  const framed = (closeCall: boolean) =>
+    normalizeRouterOutput(
+      raw({ kind: "concept", closeCall, framingQuestions: questions, skipCallout: callout("Debt constant", "debt-constant") }),
+    );
+  const close = framed(true);
+  assert.equal(close.kind, "concept");
+  if (close.kind !== "concept") return;
+  assert.deepEqual(close.framingQuestions.map((q) => q.prompt), ["What is a debt constant?"]);
+  assert.match(close.rationale, /close call/);
+  const clear = framed(false);
+  if (clear.kind !== "concept") return assert.fail("expected concept");
+  assert.equal(clear.framingQuestions.length, 3);
+  assert.doesNotMatch(clear.rationale, /close call/);
+});
+
+test("alsoSavedCallouts: the other candidates, why card first, capped so a lookup saves at most 3 items", () => {
+  const [a, b, c, d] = ["a", "b", "c", "d"].map((s) => callout(s.toUpperCase(), s));
+  assert.deepEqual(alsoSavedCallouts({ why: null, ranked: [a, b, c] }, b).map((x) => x.title), ["A", "C"]);
+  assert.deepEqual(alsoSavedCallouts({ why: null, ranked: [a] }, a), []);
+  // A why card is always the featured one, so the ranked hidden decisions follow it.
+  assert.deepEqual(alsoSavedCallouts({ why: d, ranked: [a, b, c] }, d).map((x) => x.title), ["A", "B"]);
+});
+
 test("deliverable heuristic", () => {
   for (const m of ["Write a function that bins ages", "Can you draft an email to my advisor?", "help me fix this merge", "I need a paragraph for my methods section", "I need a subject line for the spring sale email", "Can you polish my cover letter?", "I need a creative brief for the spring launch", "I need a formula that flags duplicate emails"])
     assert.ok(asksForDeliverable(m), m);
@@ -130,6 +160,36 @@ test("already framed AND answered → lookup, nothing re-queued", () => {
   assert.equal(plan.answerMode, "lookup");
   assert.deepEqual(plan.persist, []);
   assert.deepEqual(plan.matchedSlugs.sort(), ["bessel-correction", "sample-variance"]);
+});
+
+test("close-call concept on an already-framed topic is framed again (one question); a full framing is not", () => {
+  const earlier = [{ conceptSlugs: ["bessel-correction"], status: "answered" }];
+  const again = planRoute({ ...concept, closeCall: true }, { message: "But what about small samples?", earlier });
+  assert.equal(again.downgraded, null);
+  assert.equal(again.answerMode, null);
+  assert.equal(again.route.kind, "concept");
+  assert.equal(planRoute(concept, { message: "But what about small samples?", earlier }).downgraded, "already_framed");
+});
+
+test("close-call cooldown: framed again only 3 user messages after the last framing", () => {
+  const close = { ...concept, closeCall: true };
+  const at = (messagesSinceFraming: number | null) =>
+    planRoute(close, { message: "But on the origination side", earlier: [], messagesSinceFraming });
+  // Never framed in this conversation: no cooldown.
+  assert.equal(at(null).downgraded, null);
+  // Messages 1 and 2 after a framing are answered straight away, skipCallout saved.
+  for (const n of [1, 2]) {
+    const p = at(n);
+    assert.equal(p.downgraded, "cooldown");
+    assert.equal(p.answerMode, "lookup");
+    assert.deepEqual(p.persist.map((c) => c.conceptSlug), ["bessel-correction"]);
+  }
+  // The 3rd message after a framing may be framed again.
+  const third = at(3);
+  assert.equal(third.downgraded, null);
+  assert.equal(third.route.kind, "concept");
+  // A full (non-close-call) framing is not subject to the cooldown.
+  assert.equal(planRoute(concept, { message: "x", earlier: [], messagesSinceFraming: 1 }).downgraded, null);
 });
 
 test("concept on a new topic is framed (earlier exchanges on other slugs ignored)", () => {
@@ -375,14 +435,14 @@ test("task and lookup keep at most ONE framing question from the router", () => 
 test("task/lookup framing question survives only while the timer is open and with no deadline", () => {
   const task = normalizeRouterOutput(raw({ kind: "task", framingQuestions: oneQ }));
   const msg = "make me a chart of my data";
-  const open = planRoute(task, { message: msg, earlier: [], taskFramingOpen: true });
+  const open = planRoute(task, { message: msg, earlier: [], messagesSinceFraming: null });
   assert.equal(open.route.kind !== "concept" && open.route.framingQuestions?.length, 1);
   assert.equal(open.answerMode, "task");
 
-  const closed = planRoute(task, { message: msg, earlier: [], taskFramingOpen: false });
+  const closed = planRoute(task, { message: msg, earlier: [], messagesSinceFraming: 2 });
   assert.equal(closed.route.kind !== "concept" && closed.route.framingQuestions, undefined);
 
-  const deadline = planRoute(task, { message: `${msg}, due tomorrow`, earlier: [], taskFramingOpen: true });
+  const deadline = planRoute(task, { message: `${msg}, due tomorrow`, earlier: [], messagesSinceFraming: 3 });
   assert.equal(deadline.route.kind !== "concept" && deadline.route.framingQuestions, undefined);
 });
 

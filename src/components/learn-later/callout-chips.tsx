@@ -10,10 +10,13 @@ import type { LearnLaterItemDTO } from "@/lib/types";
 
 export function CalloutChips({
   items,
+  heading,
   onItemUpdated,
   onConflict,
 }: {
   items: LearnLaterItemDTO[];
+  /** Overrides the default heading line. */
+  heading?: string;
   onItemUpdated: (item: LearnLaterItemDTO) => void;
   /** 409: the item changed elsewhere — resync from the server. */
   onConflict: () => void;
@@ -28,7 +31,7 @@ export function CalloutChips({
     <div className="mt-4 animate-fade-in">
       <p className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-learn-700">
         <BookmarkIcon className="size-3.5" />
-        {skippedOnly ? "Saved to Learn It Later" : "Worth understanding later"}
+        {heading ?? (skippedOnly ? "Saved to Learn It Later" : "Worth understanding later")}
       </p>
       <ul className="flex flex-wrap gap-2">
         {items.map((item) => {
