@@ -2,7 +2,7 @@
 import "server-only";
 import { unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
-import { EXPERIMENT } from "@/config";
+import { EXPERIMENT, FRAMING } from "@/config";
 import { apiError, type ChatStreamEvent } from "@/lib/api-contract";
 import { routeMessage } from "@/lib/claude/router";
 import type { LearnerSnapshot, PromptTurn } from "@/lib/claude/prompts";
@@ -82,6 +82,7 @@ export async function handleChat(request: Request): Promise<Response> {
         userId: user.id,
         conversationId: conversation.id,
         userMessageId: userMessage.id,
+        userMessageCreatedAt: userMessage.createdAt,
         message,
         createdTitle,
         digIn: digIn.digInAnswer ? existing : null,
@@ -95,6 +96,26 @@ export async function handleChat(request: Request): Promise<Response> {
     console.error("[chat] request failed:", err);
     return apiError(500, "internal", "Something went wrong — please try again.");
   }
+}
+
+/**
+ * The framing timer (FRAMING.timerMessages): open when the conversation has no
+ * framing exchange yet, or the latest one (any kind, any status) was asked at
+ * least `timerMessages` user messages ago. The framed message is message 1, so
+ * with 3 the next two messages are closed and the 4th is open again.
+ * `now` is the current user message's time (already stored).
+ */
+async function framingTimerOpen(conversationId: string, now: Date): Promise<boolean> {
+  const last = await db.framingExchange.findFirst({
+    where: { conversationId },
+    orderBy: { createdAt: "desc" },
+    select: { userMessage: { select: { createdAt: true } } },
+  });
+  if (!last) return true;
+  const since = await db.message.count({
+    where: { conversationId, role: "user", createdAt: { gt: last.userMessage.createdAt, lte: now } },
+  });
+  return since >= FRAMING.timerMessages;
 }
 
 async function loadConversation(id: string, userId: string) {
@@ -121,6 +142,7 @@ interface ChatEventsInput {
   userId: string;
   conversationId: string;
   userMessageId: string;
+  userMessageCreatedAt: Date;
   message: string;
   createdTitle?: string;
   digIn: Awaited<ReturnType<typeof loadConversation>>;
@@ -153,10 +175,13 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
     }
 
     // ── Router (A1).
-    const catalog = await loadCatalog(userId);
+    const [catalog, taskFramingOpen] = await Promise.all([
+      loadCatalog(userId),
+      framingTimerOpen(conversationId, input.userMessageCreatedAt),
+    ]);
     let route: Awaited<ReturnType<typeof routeMessage>>;
     try {
-      route = await routeMessage({ message, turns: history, learner, catalog }, abort.signal);
+      route = await routeMessage({ message, turns: history, learner, catalog, taskFramingOpen }, abort.signal);
     } catch (err) {
       if (abort.signal.aborted) return; // client disconnected mid-route
       throw err;
@@ -171,7 +196,7 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
             select: { conceptSlugs: true, status: true },
           })
         : [];
-    const plan = planRoute(route, { message, earlier });
+    const plan = planRoute(route, { message, earlier, taskFramingOpen });
     if (plan.downgraded) {
       console.info(
         `[chat] framing downgraded (${plan.downgraded}; slugs: ${plan.matchedSlugs.join(", ") || "-"}) → ${plan.answerMode}`,
@@ -179,7 +204,14 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
     }
     route = plan.route;
 
-    if (route.kind === "concept") {
+    // A task/lookup that survived the policy with a framing question is
+    // framed like a concept, but with one question; the work follows the answer.
+    const framedQuestions = route.framingQuestions ?? [];
+    if (route.kind === "concept" || framedQuestions.length) {
+      const framingQuestions = route.kind === "concept" ? route.framingQuestions : framedQuestions;
+      // The saved item: the skip card for a concept; for a task/lookup, the
+      // router's featured item (saved whether they answer or skip).
+      const skipCallout = route.kind === "concept" ? route.skipCallout : (plan.persist[0] ?? null);
       const { exchangeId, messageId } = await db.$transaction(async (tx) => {
         const framingMsg = await tx.message.create({
           data: { conversationId, role: "assistant", kind: "framing", content: "" },
@@ -191,9 +223,10 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
             conversationId,
             userMessageId,
             framingMessageId: framingMsg.id,
-            questions: route.framingQuestions,
+            questions: framingQuestions,
             conceptSlugs: route.conceptSlugs,
-            skipCallout: route.skipCallout,
+            skipCallout: skipCallout ?? Prisma.DbNull,
+            kind: route.kind,
           },
           select: { id: true },
         });
@@ -203,7 +236,7 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
         return { exchangeId: exchange.id, messageId: framingMsg.id };
       });
       input.gate.cancel(); // nothing to assess until the framing is answered
-      yield { type: "framing", exchangeId, messageId, questions: route.framingQuestions };
+      yield { type: "framing", exchangeId, messageId, questions: framingQuestions };
       return;
     }
 

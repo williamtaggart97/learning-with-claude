@@ -232,14 +232,21 @@ export function slotCandidates(route: RouterResult): SlotCandidates {
  */
 export function planRoute(
   route: RouterResult,
-  ctx: { message: string; earlier: EarlierExchange[] },
+  ctx: { message: string; earlier: EarlierExchange[]; taskFramingOpen?: boolean },
 ): RoutePlan {
   if (route.kind !== "concept") {
     let next = route;
     let droppedWhy = false;
+    // The single task/lookup framing question is enforced in code: only while
+    // the framing timer is open (see FRAMING.timerMessages) and never on a deadline (L4).
+    if (next.framingQuestions && (!ctx.taskFramingOpen || mentionsDeadline(ctx.message))) {
+      const rest = { ...next };
+      delete rest.framingQuestions;
+      next = { ...rest, rationale: `${next.rationale} [framing question dropped]` };
+    }
     // whyCallout guard: only for messages that report a problem with their own work.
-    if (route.kind === "task" && route.whyCallout && !reportsProblem(ctx.message)) {
-      next = { ...route, whyCallout: null, rationale: `${route.rationale} [whyCallout dropped: no problem reported]` };
+    if (next.kind === "task" && next.whyCallout && !reportsProblem(ctx.message)) {
+      next = { ...next, whyCallout: null, rationale: `${next.rationale} [whyCallout dropped: no problem reported]` };
       droppedWhy = true;
     }
     return {

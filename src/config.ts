@@ -38,10 +38,18 @@ export const TIER_THRESHOLDS = {
   tier2: { framingExchanges: 15, concepts: 8 },
 } as const;
 
-/** Framing question limits (L1). */
+/**
+ * Framing question limits (L1).
+ * - timerMessages: a task/lookup may get its single framing question only when
+ *   the last framing exchange in the conversation (of any kind) is at least
+ *   this many user messages back. The framed message is message 1 of the
+ *   timer, so with 3 the next two messages are never framed and the 4th is
+ *   eligible again.
+ */
 export const FRAMING = {
   minQuestions: 1,
   maxQuestions: 3,
+  timerMessages: 3,
 } as const;
 
 /**

@@ -195,7 +195,11 @@ model FramingExchange {
   conceptSlugs     String[]      @default([])
   /// LearnLaterCallout to queue (origin = skipped) if the user picks "just answer".
   skipCallout      Json?
-  status           FramingStatus @default(pending)
+  /// What the framed message was: "concept" (framed before a concept answer) or
+  /// "task" / "lookup" (one question asked before delivering the work; then
+  /// skipCallout is the featured hidden-decision callout, saved either way).
+  kind             String        @default("concept")
+  status          FramingStatus @default(pending)
   createdAt        DateTime      @default(now())
   answeredAt       DateTime?
 

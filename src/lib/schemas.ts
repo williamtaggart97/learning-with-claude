@@ -127,11 +127,15 @@ export const LookupRouterResultSchema = z.object({
    * one (E3) — see src/lib/slot/policy.ts.
    */
   callouts: z.array(LearnLaterCalloutSchema).optional(),
+  /** One framing question for a vague or parroted request (see FRAMING_QUESTION_RULES); absent otherwise. */
+  framingQuestions: FramingQuestionsSchema.max(1).optional(),
 });
 
 export const TaskRouterResultSchema = z.object({
   kind: z.literal("task"),
   ...RouterCommon,
+  /** One framing question for a vague or parroted request; absent otherwise. */
+  framingQuestions: FramingQuestionsSchema.max(1).optional(),
   /**
    * Hidden decisions behind the work product (L5, L8), ranked most
    * consequential first, like lookup callouts.

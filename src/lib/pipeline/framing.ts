@@ -7,6 +7,7 @@ import { db, Prisma } from "@/lib/db";
 import { learnLaterItemToDTO, upsertLearnLaterItem, type LearnLaterItemWithConcept } from "@/lib/learn-later";
 import { ndjsonResponse } from "@/lib/ndjson";
 import { ASSESSMENT_MAX_WAIT_MS, createAssessmentGate, runAfterStream, type AssessmentGate } from "@/lib/pipeline/assess";
+import type { FramedDeliver } from "@/lib/claude/prompts";
 import { loadLearnerSnapshot, loadTurns, parseQuestions } from "@/lib/pipeline/context";
 import { enforceChatRateLimits, validateFramingResponses } from "@/lib/pipeline/guards";
 import {
@@ -48,6 +49,7 @@ async function framingAnswer(request: Request, exchangeId: string): Promise<Resp
       conversationId: true,
       questions: true,
       skipCallout: true,
+      kind: true,
       userMessage: { select: { id: true, content: true, createdAt: true } },
     },
   });
@@ -65,7 +67,10 @@ async function framingAnswer(request: Request, exchangeId: string): Promise<Resp
   const limited = await enforceChatRateLimits(user.demoSessionId, request.headers);
   if (limited) return limited;
 
-  const skipCallout = skip ? parseCallout(exchange.skipCallout) : null;
+  // A task/lookup exchange (one quick question before the work) saves its
+  // featured item whether the user answers or skips; a concept exchange only on skip.
+  const framedDeliver: FramedDeliver | null = exchange.kind === "task" || exchange.kind === "lookup" ? exchange.kind : null;
+  const skipCallout = skip || framedDeliver ? parseCallout(exchange.skipCallout) : null;
 
   // Transition out of `pending` atomically (guards double submits → 409).
   // Tier progress: `before` is read inside the transaction; `after` is the
@@ -88,7 +93,7 @@ async function framingAnswer(request: Request, exchangeId: string): Promise<Resp
         {
           userId: user.id,
           callout: skipCallout,
-          origin: "skipped",
+          origin: framedDeliver ? "flagged" : "skipped",
           sourceConversationId: exchange.conversationId,
           sourceMessageId: exchange.userMessage.id,
         },
@@ -113,6 +118,7 @@ async function framingAnswer(request: Request, exchangeId: string): Promise<Resp
       questions,
       responses,
       skip,
+      framedDeliver,
       skipCallout,
       skipItem,
       progress,
@@ -135,6 +141,8 @@ interface FramingEventsInput {
   questions: FramingQuestion[];
   responses: FramingResponse[];
   skip: boolean;
+  /** Set for a task/lookup exchange: the work is delivered after the question. */
+  framedDeliver: FramedDeliver | null;
   skipCallout: LearnLaterCallout | null;
   skipItem: LearnLaterItemWithConcept | null;
   progress: { before: TierInputs; after: TierInputs } | null;
@@ -143,7 +151,7 @@ interface FramingEventsInput {
 }
 
 async function* framingEvents(input: FramingEventsInput): AsyncGenerator<ChatStreamEvent> {
-  const { userId, conversationId, userMessage, skip } = input;
+  const { userId, conversationId, userMessage, skip, framedDeliver } = input;
   const abort = linkedAbort(input.requestSignal);
   // The exchange already left `pending`, so a retry would 409: it must end up
   // with an answer message, or be reopened after a failure (R10).
@@ -183,26 +191,41 @@ async function* framingEvents(input: FramingEventsInput): AsyncGenerator<ChatStr
 
     yield* answerAndPersist({
       answer: skip
-        ? { mode: "skip", learner, history, message: userMessage.content }
-        : { mode: "framing", learner, history, message: userMessage.content, questions: input.questions, responses: input.responses },
+        ? { mode: framedDeliver ?? "skip", learner, history, message: userMessage.content }
+        : {
+            mode: "framing",
+            learner,
+            history,
+            message: userMessage.content,
+            questions: input.questions,
+            responses: input.responses,
+            ...(framedDeliver ? { deliver: framedDeliver } : {}),
+          },
       signal: abort.signal,
       gate: input.gate,
       keepPartialOnError: true,
       persist: async (text) => {
         const messageId = await storeAnswer(text);
-        // Skip path always emits `callouts` (with the saved item, if any).
-        return { messageId, callouts: skip ? (input.skipItem ? [learnLaterItemToDTO(input.skipItem)] : []) : null };
+        // Skip path (and a task/lookup exchange) always emits `callouts` (with the saved item, if any).
+        return {
+          messageId,
+          callouts: skip || framedDeliver ? (input.skipItem ? [learnLaterItemToDTO(input.skipItem)] : []) : null,
+        };
       },
       job: (answerMessageId, text) => ({
         userId,
         conversationId,
         userMessageId: userMessage.id,
         answerMessageId,
-        mode: skip ? "skip" : "framing",
+        mode: skip ? (framedDeliver ?? "skip") : "framing",
         userMessage: userMessage.content,
         answer: text,
         history,
-        ...(skip ? { skipCallout: input.skipCallout } : { framing: { questions: input.questions, responses: input.responses } }),
+        ...(skip
+          ? framedDeliver
+            ? {}
+            : { skipCallout: input.skipCallout }
+          : { framing: { questions: input.questions, responses: input.responses } }),
       }),
     });
   } catch (err) {

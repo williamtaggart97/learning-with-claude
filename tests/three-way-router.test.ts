@@ -356,3 +356,44 @@ test("task mode never creates a mastery (P7), only updates existing ones", async
   assert.equal(await applyConcept(some.tx, job, assessed, "t"), "updated");
   assert.deepEqual(some.writes, [["mastery.upsert", 0.55]]);
 });
+
+// ─── One framing question on a vague / parroted task or lookup ──────────────
+
+const oneQ = [{ prompt: "Who is the chart for?", format: "short_answer", options: [] }];
+
+test("task and lookup keep at most ONE framing question from the router", () => {
+  const task = normalizeRouterOutput(
+    raw({ kind: "task", framingQuestions: [...oneQ, { prompt: "Second?", format: "short_answer", options: [] }] }),
+  );
+  assert.equal(task.kind === "task" && task.framingQuestions?.length, 1);
+  const lookup = normalizeRouterOutput(raw({ kind: "lookup", framingQuestions: oneQ }));
+  assert.equal(lookup.kind === "lookup" && lookup.framingQuestions?.[0].id, "q1");
+  const none = normalizeRouterOutput(raw({ kind: "task" }));
+  assert.equal(none.kind === "task" && none.framingQuestions, undefined);
+});
+
+test("task/lookup framing question survives only while the timer is open and with no deadline", () => {
+  const task = normalizeRouterOutput(raw({ kind: "task", framingQuestions: oneQ }));
+  const msg = "make me a chart of my data";
+  const open = planRoute(task, { message: msg, earlier: [], taskFramingOpen: true });
+  assert.equal(open.route.kind !== "concept" && open.route.framingQuestions?.length, 1);
+  assert.equal(open.answerMode, "task");
+
+  const closed = planRoute(task, { message: msg, earlier: [], taskFramingOpen: false });
+  assert.equal(closed.route.kind !== "concept" && closed.route.framingQuestions, undefined);
+
+  const deadline = planRoute(task, { message: `${msg}, due tomorrow`, earlier: [], taskFramingOpen: true });
+  assert.equal(deadline.route.kind !== "concept" && deadline.route.framingQuestions, undefined);
+});
+
+test("framed task answer follows the task rules and hides project context; framed lookup is quick", () => {
+  const withCtx = { concepts: [], style: null, context: { field: "marketing", projects: ["Secret Q3 launch"], dataTypes: [], notes: null } };
+  const questions = [{ id: "q1", prompt: "Who is it for?", format: "short_answer" as const }];
+  const responses = [{ questionId: "q1", answer: "my manager", dontKnow: false }];
+  const task = buildAnswerRequest({ mode: "framing", deliver: "task", learner: withCtx, history: [], message: "chart my data", questions, responses });
+  assert.match(task.system, /Deliver the work product first/);
+  assert.doesNotMatch(task.system, /Secret Q3 launch/);
+  const lookup = buildAnswerRequest({ mode: "framing", deliver: "lookup", learner: withCtx, history: [], message: "x", questions, responses });
+  assert.match(lookup.system, /quick lookup/);
+  assert.match(lookup.system, /Secret Q3 launch/);
+});
