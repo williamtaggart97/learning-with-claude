@@ -157,22 +157,25 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
       ...(input.createdTitle ? { title: input.createdTitle } : {}),
     };
 
+    // Router inputs load alongside history/learner; the dig-in path skips them.
+    const routerInputs = input.digIn
+      ? null
+      : Promise.all([loadCatalog(userId), countMessagesSinceFraming(conversationId)]);
+    // Awaited below; this only stops an unhandled rejection if we throw first.
+    routerInputs?.catch(() => {});
     const [history, learner] = await Promise.all([
       loadTurns(conversationId, { excludeIds: [userMessageId] }),
       loadLearnerSnapshot(userId),
     ]);
 
     // ── Dig-in kickoff (R9): no router, straight to the Q4 answer.
-    if (input.digIn) {
+    if (!routerInputs) {
       yield* digInAnswer(input, history, learner, abort.signal);
       return;
     }
 
     // ── Router (A1).
-    const [catalog, messagesSinceFraming] = await Promise.all([
-      loadCatalog(userId),
-      countMessagesSinceFraming(conversationId),
-    ]);
+    const [catalog, messagesSinceFraming] = await routerInputs;
     const taskFramingOpen = framingTimerOpen(messagesSinceFraming);
     let route: Awaited<ReturnType<typeof routeMessage>>;
     try {

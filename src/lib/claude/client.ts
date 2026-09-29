@@ -50,7 +50,9 @@ export async function callStructured<T>(opts: StructuredCallOptions<T>): Promise
       {
         model: opts.model,
         max_tokens: maxTokens,
-        system: opts.system,
+        // Static per-label system prompts: cache them. Below the model's
+        // minimum cacheable length (4096 tokens on Haiku 4.5) this is a no-op.
+        system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
         messages: opts.messages,
         output_config: { format: { type: "json_schema", schema: opts.jsonSchema } },
       },
