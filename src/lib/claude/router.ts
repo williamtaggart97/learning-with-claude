@@ -191,13 +191,23 @@ export function normalizeRouterOutput(raw: unknown, message = "", explicit: Expl
         : { kind: "lookup", conceptSlugs, rationale: degraded, callouts },
     );
   }
+  // A task or lookup may carry ONE framing question (vague or parroted request).
+  const single = normalizeQuestions(r.framingQuestions).slice(0, 1);
+  const framing = single.length ? { framingQuestions: single } : {};
   if (r.kind === "lookup") {
-    return RouterResultSchema.parse({ kind: "lookup", conceptSlugs, rationale, callouts: ranked(null) });
+    return RouterResultSchema.parse({ kind: "lookup", conceptSlugs, rationale, callouts: ranked(null), ...framing });
   }
   if (r.kind === "task") {
     const whyCallout = normalizeCallout(r.whyCallout);
     // Drop hidden-decision callouts that repeat the why card BEFORE capping.
-    return RouterResultSchema.parse({ kind: "task", conceptSlugs, rationale, callouts: ranked(whyCallout), whyCallout });
+    return RouterResultSchema.parse({
+      kind: "task",
+      conceptSlugs,
+      rationale,
+      callouts: ranked(whyCallout),
+      whyCallout,
+      ...framing,
+    });
   }
   throw new Error("router: missing kind");
 }
@@ -208,6 +218,8 @@ export interface RouteInput {
   turns: PromptTurn[];
   learner: LearnerSnapshot;
   catalog: { slug: string; name: string }[];
+  /** False while the framing timer is running: a task/lookup must not carry a framing question. */
+  taskFramingOpen: boolean;
 }
 
 /**
@@ -245,6 +257,7 @@ export async function routeMessage(input: RouteInput, signal?: AbortSignal): Pro
               turns: input.turns.slice(-6),
               learnerText: formatLearner(input.learner),
               catalog: input.catalog,
+              taskFramingOpen: input.taskFramingOpen,
               explicit,
             }) +
             (retry

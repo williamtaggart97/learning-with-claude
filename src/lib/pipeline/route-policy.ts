@@ -277,6 +277,11 @@ export function slotCandidates(route: RouterResult): SlotCandidates {
   return { why: route.kind === "task" ? route.whyCallout : null, ranked: route.callouts ?? [] };
 }
 
+/** The shared one-question framing timer: open if never framed, or the cooldown has passed. */
+export function framingTimerOpen(messagesSinceFraming: number | null | undefined): boolean {
+  return messagesSinceFraming == null || messagesSinceFraming >= FRAMING.closeCallEveryMessages;
+}
+
 /**
  * Decide how the router's result is handled (the chat pipeline's single
  * entry point for policy — exported so the wiring is testable):
@@ -313,9 +318,16 @@ export function planRoute(
   if (route.kind !== "concept") {
     let next = route;
     let droppedWhy = false;
+    // The single task/lookup framing question is enforced in code: only while
+    // the shared framing timer is open (FRAMING.closeCallEveryMessages) and never on a deadline (L4).
+    if (next.framingQuestions && (!framingTimerOpen(ctx.messagesSinceFraming) || mentionsDeadline(ctx.message))) {
+      const rest = { ...next };
+      delete rest.framingQuestions;
+      next = { ...rest, rationale: `${next.rationale} [framing question dropped]` };
+    }
     // whyCallout guard: only for messages that report a problem with their own work.
-    if (route.kind === "task" && route.whyCallout && !reportsProblem(ctx.message)) {
-      next = { ...route, whyCallout: null, rationale: `${route.rationale} [whyCallout dropped: no problem reported]` };
+    if (next.kind === "task" && next.whyCallout && !reportsProblem(ctx.message)) {
+      next = { ...next, whyCallout: null, rationale: `${next.rationale} [whyCallout dropped: no problem reported]` };
       droppedWhy = true;
     }
     return {

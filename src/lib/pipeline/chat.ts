@@ -12,7 +12,7 @@ import { ndjsonResponse } from "@/lib/ndjson";
 import { ASSESSMENT_MAX_WAIT_MS, createAssessmentGate, runAfterStream, type AssessmentGate } from "@/lib/pipeline/assess";
 import { loadCatalog, loadLearnerSnapshot, loadTurns } from "@/lib/pipeline/context";
 import { classifyDigIn, enforceChatRateLimits, titleFromMessage } from "@/lib/pipeline/guards";
-import { alsoSavedCallouts, explicitFraming, planRoute } from "@/lib/pipeline/route-policy";
+import { alsoSavedCallouts, explicitFraming, framingTimerOpen, planRoute } from "@/lib/pipeline/route-policy";
 import { answerAndPersist, linkedAbort, touchConversation } from "@/lib/pipeline/stream";
 import { ChatRequestSchema } from "@/lib/schemas";
 import { getSessionUser } from "@/lib/session";
@@ -169,10 +169,14 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
     }
 
     // ── Router (A1).
-    const catalog = await loadCatalog(userId);
+    const [catalog, messagesSinceFraming] = await Promise.all([
+      loadCatalog(userId),
+      countMessagesSinceFraming(conversationId),
+    ]);
+    const taskFramingOpen = framingTimerOpen(messagesSinceFraming);
     let route: Awaited<ReturnType<typeof routeMessage>>;
     try {
-      route = await routeMessage({ message, turns: history, learner, catalog }, abort.signal);
+      route = await routeMessage({ message, turns: history, learner, catalog, taskFramingOpen }, abort.signal);
     } catch (err) {
       if (abort.signal.aborted) return; // client disconnected mid-route
       throw err;
@@ -187,8 +191,6 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
             select: { conceptSlugs: true, status: true },
           })
         : [];
-    const messagesSinceFraming =
-      route.kind === "concept" && route.closeCall ? await countMessagesSinceFraming(conversationId) : null;
     const plan = planRoute(route, {
       message,
       earlier,
@@ -202,7 +204,14 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
     }
     route = plan.route;
 
-    if (route.kind === "concept") {
+    // A task/lookup that survived the policy with a framing question is
+    // framed like a concept, but with one question; the work follows the answer.
+    const framedQuestions = route.framingQuestions ?? [];
+    if (route.kind === "concept" || framedQuestions.length) {
+      const framingQuestions = route.kind === "concept" ? route.framingQuestions : framedQuestions;
+      // The saved item: the skip card for a concept; for a task/lookup, the
+      // router's featured item (saved whether they answer or skip).
+      const skipCallout = route.kind === "concept" ? route.skipCallout : (plan.persist[0] ?? null);
       const { exchangeId, messageId } = await db.$transaction(async (tx) => {
         const framingMsg = await tx.message.create({
           data: { conversationId, role: "assistant", kind: "framing", content: "" },
@@ -214,9 +223,10 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
             conversationId,
             userMessageId,
             framingMessageId: framingMsg.id,
-            questions: route.framingQuestions,
+            questions: framingQuestions,
             conceptSlugs: route.conceptSlugs,
-            skipCallout: route.skipCallout,
+            skipCallout: skipCallout ?? Prisma.DbNull,
+            kind: route.kind,
           },
           select: { id: true },
         });
@@ -226,7 +236,7 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
         return { exchangeId: exchange.id, messageId: framingMsg.id };
       });
       input.gate.cancel(); // nothing to assess until the framing is answered
-      yield { type: "framing", exchangeId, messageId, questions: route.framingQuestions };
+      yield { type: "framing", exchangeId, messageId, questions: framingQuestions };
       return;
     }
 
