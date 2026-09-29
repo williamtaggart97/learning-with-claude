@@ -131,7 +131,7 @@ export const DEFAULT_PERSONA = "maya" as const;
 export const EXPERIMENT = {
   active: envBool("EXPERIMENT_ACTIVE", true),
   topPickProbability: 0.6,
-  weights: { card: 1, walkthrough: 1, quickcheck: 1, apply: 1, none: 1 },
+  weights: { card: 1, walkthrough: 1, quickcheck: 1, apply: 1, none: 0 }, // demo: control is never drawn
   enabled: { card: true, walkthrough: true, quickcheck: true, apply: true, none: true },
   sessionWindowMinutes: 30,
   contentWaitMs: 1500,
