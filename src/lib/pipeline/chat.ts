@@ -12,7 +12,7 @@ import { ndjsonResponse } from "@/lib/ndjson";
 import { ASSESSMENT_MAX_WAIT_MS, createAssessmentGate, runAfterStream, type AssessmentGate } from "@/lib/pipeline/assess";
 import { loadCatalog, loadLearnerSnapshot, loadTurns } from "@/lib/pipeline/context";
 import { classifyDigIn, enforceChatRateLimits, titleFromMessage } from "@/lib/pipeline/guards";
-import { planRoute } from "@/lib/pipeline/route-policy";
+import { alsoSavedCallouts, planRoute } from "@/lib/pipeline/route-policy";
 import { answerAndPersist, linkedAbort, touchConversation } from "@/lib/pipeline/stream";
 import { ChatRequestSchema } from "@/lib/schemas";
 import { getSessionUser } from "@/lib/session";
@@ -97,6 +97,22 @@ export async function handleChat(request: Request): Promise<Response> {
   }
 }
 
+/**
+ * User messages since the conversation's most recent framing (counting the one
+ * just stored), or null if it has never been framed. Feeds the close-call
+ * cooldown in planRoute.
+ */
+async function countMessagesSinceFraming(conversationId: string): Promise<number | null> {
+  const last = await db.framingExchange.findFirst({
+    where: { conversationId },
+    orderBy: { createdAt: "desc" },
+    select: { userMessage: { select: { createdAt: true } } },
+  });
+  const framedAt = last?.userMessage.createdAt;
+  if (!framedAt) return null;
+  return db.message.count({ where: { conversationId, role: "user", createdAt: { gt: framedAt } } });
+}
+
 async function loadConversation(id: string, userId: string) {
   return db.conversation.findFirst({
     where: { id, userId },
@@ -171,7 +187,9 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
             select: { conceptSlugs: true, status: true },
           })
         : [];
-    const plan = planRoute(route, { message, earlier });
+    const messagesSinceFraming =
+      route.kind === "concept" && route.closeCall ? await countMessagesSinceFraming(conversationId) : null;
+    const plan = planRoute(route, { message, earlier, messagesSinceFraming });
     if (plan.downgraded) {
       console.info(
         `[chat] framing downgraded (${plan.downgraded}; slugs: ${plan.matchedSlugs.join(", ") || "-"}) → ${plan.answerMode}`,
@@ -212,8 +230,8 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
     // top item is saved and emitted via `callouts` exactly as before.
     // Experiment active: the end-of-answer slot (E1–E5) is drawn up front so
     // its payload is generated in parallel with the answer; the featured item
-    // is ALWAYS saved (E3) with the answer, then `callouts` (the same item,
-    // backward compat — omitted for the "none" control) and `slot` are
+    // is ALWAYS saved (E3) with the answer, along with the router's other
+    // candidates; then `callouts` (all saved items) and `slot` are
     // emitted before `done`. A failed draw (startSlot → null) falls back to
     // the inactive behaviour for this answer.
     // E4 priority override: a lookup/task answer can't change the answered-
@@ -244,21 +262,24 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
         const fetched = !incomplete && slotRun ? await resolveSlotContent(slotRun) : null;
         const featured = incomplete ? null : (slotRun?.plan.featured.callout ?? plan.persist[0] ?? null);
         return db.$transaction(async (tx) => {
-          const saved = featured
-            ? await upsertLearnLaterItem(
-                { userId, callout: featured, origin: "flagged", sourceConversationId: conversationId, sourceMessageId: userMessageId },
-                tx,
-              )
-            : null;
+          const source = { userId, origin: "flagged", sourceConversationId: conversationId, sourceMessageId: userMessageId } as const;
+          const saved = featured ? await upsertLearnLaterItem({ ...source, callout: featured }, tx) : null;
           const item = saved?.item ?? null;
+          // The router's other candidates are saved too, so the profile panel
+          // always has cards to dig into. Two callouts can resolve to the same
+          // queued item (R13): list each item once.
+          const shown: NonNullable<typeof item>[] = item ? [item] : [];
+          for (const callout of featured ? alsoSavedCallouts(plan.candidates, featured) : []) {
+            const { item: extra } = await upsertLearnLaterItem({ ...source, callout }, tx);
+            if (!shown.some((s) => s.id === extra.id)) shown.push(extra);
+          }
           // The payload describes the item resolved at draw time (R13 reuse);
           // if the saved item differs, fall back to the card.
           const resolved =
             fetched && slotRun && saved ? reconcileSlotContent(slotRun, fetched, saved.created ? null : saved.item.id) : fetched;
-          // Control arm: the item is saved (E3) but surfaced nowhere — no
-          // `callouts` event and no calloutItemIds, so history shows nothing either.
-          const surfaced = resolved?.variant !== "none";
-          const data: AnswerMessageData | null = item && surfaced ? { calloutItemIds: [item.id] } : null;
+          // Everything saved is disclosed, whichever slot arm was drawn
+          // (including the "none" control, which shows it passively).
+          const data: AnswerMessageData | null = shown.length ? { calloutItemIds: shown.map((s) => s.id) } : null;
           const msg = await tx.message.create({
             data: {
               conversationId,
@@ -284,7 +305,7 @@ async function* chatEvents(input: ChatEventsInput): AsyncGenerator<ChatStreamEve
             });
           }
           await touchConversation(tx, conversationId);
-          return { messageId: msg.id, callouts: item && surfaced ? [learnLaterItemToDTO(item)] : null, slot };
+          return { messageId: msg.id, callouts: shown.length ? shown.map(learnLaterItemToDTO) : null, slot };
         });
       },
       job: (answerMessageId, text) => ({

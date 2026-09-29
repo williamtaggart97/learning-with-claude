@@ -137,15 +137,11 @@ export function toMessageDTO(
   }
   if (m.kind === "answer") {
     const slot = slotsByMessageId.get(m.id) ?? null;
-    // Control arm ("none"): the featured item is queued (E3) but never shown
-    // under the answer. chat.ts stores no calloutItemIds for it; this is the
-    // belt to that braces.
-    const callouts =
-      slot?.variant === "none"
-        ? []
-        : calloutIdsOf(m)
-            .map((id) => itemsById.get(id))
-            .filter((x): x is LearnLaterItemDTO => !!x);
+    // Every saved item is listed, including for the "none" control (which
+    // renders it passively).
+    const callouts = calloutIdsOf(m)
+      .map((id) => itemsById.get(id))
+      .filter((x): x is LearnLaterItemDTO => !!x);
     return { ...base, role: "assistant", kind: "answer", data: { callouts, slot } };
   }
   return { ...base, role: m.role, kind: "text", data: null };

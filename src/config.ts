@@ -42,6 +42,12 @@ export const TIER_THRESHOLDS = {
 export const FRAMING = {
   minQuestions: 1,
   maxQuestions: 3,
+  /**
+   * A one-question close call may frame a follow-up only this many user
+   * messages after the conversation's last framing (counting the current
+   * message): a frame at message 3 allows the next at message 6.
+   */
+  closeCallEveryMessages: 3,
 } as const;
 
 /**

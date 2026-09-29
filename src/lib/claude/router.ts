@@ -27,6 +27,7 @@ export const ROUTER_JSON_SCHEMA: Record<string, unknown> = {
   properties: {
     kind: { type: "string", enum: ["concept", "lookup", "task"] },
     rationale: { type: "string" },
+    closeCall: { type: "boolean" },
     conceptSlugs: { type: "array", items: { type: "string" } },
     framingQuestions: {
       type: "array",
@@ -45,7 +46,7 @@ export const ROUTER_JSON_SCHEMA: Record<string, unknown> = {
     callouts: { type: "array", items: CALLOUT_JSON },
     whyCallout: { anyOf: [CALLOUT_JSON, { type: "null" }] },
   },
-  required: ["kind", "rationale", "conceptSlugs", "framingQuestions", "skipCallout", "callouts", "whyCallout"],
+  required: ["kind", "rationale", "closeCall", "conceptSlugs", "framingQuestions", "skipCallout", "callouts", "whyCallout"],
   additionalProperties: false,
 };
 
@@ -58,6 +59,7 @@ interface RawCallout {
 interface RawRouter {
   kind?: unknown;
   rationale?: unknown;
+  closeCall?: unknown;
   conceptSlugs?: unknown;
   framingQuestions?: { prompt?: unknown; format?: unknown; options?: unknown }[];
   skipCallout?: RawCallout | null;
@@ -143,10 +145,21 @@ export function normalizeRouterOutput(raw: unknown, message = ""): RouterResult 
   };
 
   if (r.kind === "concept") {
-    const framingQuestions = normalizeQuestions(r.framingQuestions);
+    // A close call between concept and lookup is framed with exactly one
+    // question: enough to engage the learner, not a quiz. Enforced here even
+    // if the model wrote more.
+    const closeCall = r.closeCall === true;
+    const framingQuestions = normalizeQuestions(r.framingQuestions).slice(0, closeCall ? 1 : FRAMING.maxQuestions);
     const skipCallout = normalizeCallout(r.skipCallout);
     if (framingQuestions.length >= FRAMING.minQuestions && skipCallout) {
-      return RouterResultSchema.parse({ kind: "concept", conceptSlugs, rationale, framingQuestions, skipCallout });
+      return RouterResultSchema.parse({
+        kind: "concept",
+        conceptSlugs,
+        rationale: closeCall ? `${rationale} [close call: 1 question]` : rationale,
+        framingQuestions,
+        skipCallout,
+        ...(closeCall ? { closeCall } : {}),
+      });
     }
     // Unusable framing → answer now so the user still gets an answer: a task
     // if the message asks for a deliverable, else a lookup. The skipCallout

@@ -57,8 +57,10 @@ export function MessageItem({
 
   const callouts = message.kind === "answer" ? message.data.callouts : [];
   // R15: an answer with a slot shows the slot INSTEAD of callout chips (the
-  // "none" control shows nothing at all). Answers without one keep the chips.
+  // "none" control shows a passive "Saved" line). Answers without one keep the
+  // chips. Items saved besides the slot's featured one are listed under it.
   const slot = message.kind === "answer" ? (message.data.slot ?? null) : null;
+  const alsoSaved = slot ? callouts.filter((c) => c.id !== slot.item.id) : [];
   return (
     <article className="min-w-0" aria-busy={message.streaming || undefined}>
       <h2 className="sr-only">Claude said:</h2>
@@ -71,15 +73,25 @@ export function MessageItem({
         <p className="mt-3 inline-flex rounded-lg bg-surface-muted px-3 py-1.5 text-xs text-ink-muted">{message.notice}</p>
       )}
       {slot ? (
-        <EndOfAnswerSlot
-          slot={slot}
-          busy={busy}
-          onSlotUpdated={onSlotUpdated}
-          onItemUpdated={onItemUpdated}
-          onConflict={onConflict}
-          onWalkthrough={onWalkthrough}
-          onApply={onApply}
-        />
+        <>
+          <EndOfAnswerSlot
+            slot={slot}
+            busy={busy}
+            onSlotUpdated={onSlotUpdated}
+            onItemUpdated={onItemUpdated}
+            onConflict={onConflict}
+            onWalkthrough={onWalkthrough}
+            onApply={onApply}
+          />
+          {!message.streaming && alsoSaved.length > 0 && (
+            <CalloutChips
+              heading="Also saved to Learn It Later"
+              items={alsoSaved}
+              onItemUpdated={onItemUpdated}
+              onConflict={onConflict}
+            />
+          )}
+        </>
       ) : (
         !message.streaming &&
         callouts.length > 0 && <CalloutChips items={callouts} onItemUpdated={onItemUpdated} onConflict={onConflict} />

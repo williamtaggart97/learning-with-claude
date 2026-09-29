@@ -2,6 +2,7 @@
 // pipeline acts on it (L4, L5, L8, L9). Pure — no DB or model calls — so it
 // can be unit-tested offline. The router prompt states the same rules; this is
 // the enforcement layer.
+import { FRAMING } from "@/config";
 import type { LearnLaterCallout, RouterResult } from "@/lib/types";
 
 // ─── Message heuristics ─────────────────────────────────────────────────────
@@ -174,7 +175,7 @@ export function reportsProblem(message: string): boolean {
 /** How an immediate (non-framed) answer is written. See MODE_INSTRUCTIONS. */
 export type ImmediateAnswerMode = "lookup" | "task" | "direct";
 
-export type FramingDowngrade = "deadline" | "already_framed";
+export type FramingDowngrade = "deadline" | "already_framed" | "cooldown";
 
 /** An earlier FramingExchange in this conversation that shares a concept. */
 export interface EarlierExchange {
@@ -225,14 +226,24 @@ export function slotCandidates(route: RouterResult): SlotCandidates {
  *   asks for a deliverable it's a task; otherwise "direct" mode: a concise,
  *   complete concept answer (the route stays lookup-shaped). The skipCallout
  *   is the saved item.
+ * - Close call within FRAMING.closeCallEveryMessages user messages of the
+ *   conversation's last framing → lookup (cooldown), skipCallout saved.
  * - Concept sharing a slug with an earlier exchange in this conversation (L9,
- *   framing once per topic) → lookup. If any matching exchange was answered
+ *   framing once per topic; a one-question close call is exempt) → lookup. If any matching exchange was answered
  *   the user just worked through it, so nothing is re-queued; otherwise the
  *   skipCallout is the saved item.
  */
 export function planRoute(
   route: RouterResult,
-  ctx: { message: string; earlier: EarlierExchange[] },
+  ctx: {
+    message: string;
+    earlier: EarlierExchange[];
+    /**
+     * User messages since this conversation's last framing, counting the
+     * current one; null/undefined when it has never been framed.
+     */
+    messagesSinceFraming?: number | null;
+  },
 ): RoutePlan {
   if (route.kind !== "concept") {
     let next = route;
@@ -270,9 +281,34 @@ export function planRoute(
     };
   }
 
+  // Cooldown: a close call frames a follow-up only every few messages, so a
+  // continued conversation is poked, not quizzed. The skipCallout is still
+  // saved, so the concept isn't lost.
+  const since = ctx.messagesSinceFraming;
+  if (route.closeCall && since != null && since < FRAMING.closeCallEveryMessages) {
+    const next: RouterResult = {
+      kind: "lookup",
+      conceptSlugs: route.conceptSlugs,
+      rationale: `${route.rationale} [downgraded: close-call cooldown, ${since}/${FRAMING.closeCallEveryMessages}]`,
+      callouts: [route.skipCallout],
+    };
+    return {
+      route: next,
+      answerMode: "lookup",
+      downgraded: "cooldown",
+      matchedSlugs: route.conceptSlugs,
+      persist: featuredCallouts(next),
+      candidates: slotCandidates(next),
+      droppedWhy: false,
+    };
+  }
+
   const slugs = new Set(route.conceptSlugs);
   const matching = ctx.earlier.filter((e) => e.conceptSlugs.some((s) => slugs.has(s)));
-  if (matching.length) {
+  // A close call (one question) may re-frame a concept already framed here:
+  // a continued, still open-ended conversation keeps poking the learner's
+  // thinking. Full multi-question framings stay once per topic.
+  if (matching.length && !route.closeCall) {
     const matchedSlugs = [...new Set(matching.flatMap((e) => e.conceptSlugs).filter((s) => slugs.has(s)))];
     const answered = matching.some((e) => e.status === "answered");
     const next: RouterResult = {
@@ -293,6 +329,19 @@ export function planRoute(
   }
 
   return { route, answerMode: null, downgraded: null, matchedSlugs: [], persist: [], candidates: NO_CANDIDATES, droppedWhy: false };
+}
+
+/** At most this many Learn It Later items are saved (and shown) per lookup/task answer. */
+export const MAX_SAVED_PER_ANSWER = 3;
+
+/**
+ * The router's other candidates, saved next to the featured item so a lookup
+ * or task always leaves a few concepts to dig into in the profile panel, not
+ * just the one the end-of-answer slot features. Why card first, then the
+ * ranked hidden decisions; the featured one is excluded.
+ */
+export function alsoSavedCallouts(c: SlotCandidates, featured: LearnLaterCallout): LearnLaterCallout[] {
+  return [...(c.why ? [c.why] : []), ...c.ranked].filter((x) => x !== featured).slice(0, MAX_SAVED_PER_ANSWER - 1);
 }
 
 /**
