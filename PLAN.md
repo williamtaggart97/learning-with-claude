@@ -8,8 +8,7 @@ Every decision settled during design, grouped by area. For the narrative overvie
 |---|----------|--------|
 | D1 | Output is a working prototype | A clickable Next.js/React web app, submitted for the "Learning through collaboration with Claude" prompt. |
 | D2 | Real Claude API, no scripted paths | Live calls through Next.js route handlers; API key in `.env.local`. The empty state offers suggested starter prompts. |
-| D3 | Delivered as GitHub repo + hosted link | https://github.com/williamtaggart97/learning-with-claude, plus a Vercel deployment. |
-| D4 | Working name: "Learning mode" | Reads as a Claude feature toggle rather than a separate product. |
+| D3 | Working name: "Learning mode" | Reads as a Claude feature toggle rather than a separate product. |
 
 ## User and positioning
 
